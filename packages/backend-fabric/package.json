@@ -1,0 +1,18 @@
+{
+  "name": "@redstack/backend-fabric",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test-Backend: Fabric + Carpet Server (Phase 3, Stub)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/testing": "workspace:*"
+  }
+}

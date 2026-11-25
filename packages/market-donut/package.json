@@ -1,0 +1,19 @@
+{
+  "name": "@redstack/market-donut",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DonutSMP-Profil (Handelskanäle, Datenimport)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/economy": "workspace:*",
+    "@redstack/market-static": "workspace:*"
+  }
+}

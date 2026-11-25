@@ -1,0 +1,21 @@
+{
+  "name": "@redstack/cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kommandozeile: check, flow, build",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/core": "workspace:*",
+    "@redstack/flow": "workspace:*",
+    "@redstack/export-nucleation": "workspace:*",
+    "@redstack/viz": "workspace:*"
+  }
+}

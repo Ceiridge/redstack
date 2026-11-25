@@ -1,0 +1,10 @@
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+# Server-Binaries und Testwelten werden per Skript geladen, nie committet
+servers/
+worlds/

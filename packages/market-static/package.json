@@ -1,0 +1,18 @@
+{
+  "name": "@redstack/market-static",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Preisquelle aus lokaler JSON-Datei (für jeden SMP)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/economy": "workspace:*"
+  }
+}

@@ -1,0 +1,5 @@
+[submodule "vendor/nucleation"]
+	path = vendor/nucleation
+	url = https://github.com/Schem-at/Nucleation.git
+	shallow = true
+	update = none

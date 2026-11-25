@@ -1,0 +1,41 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/export-nucleation"
+    },
+    {
+      "path": "./packages/flow"
+    },
+    {
+      "path": "./packages/economy"
+    },
+    {
+      "path": "./packages/market-static"
+    },
+    {
+      "path": "./packages/market-donut"
+    },
+    {
+      "path": "./packages/testing"
+    },
+    {
+      "path": "./packages/backend-fabric"
+    },
+    {
+      "path": "./packages/viz"
+    },
+    {
+      "path": "./packages/stdlib"
+    },
+    {
+      "path": "./apps/cli"
+    },
+    {
+      "path": "./examples"
+    }
+  ]
+}

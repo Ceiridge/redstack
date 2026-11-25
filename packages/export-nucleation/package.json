@@ -1,0 +1,19 @@
+{
+  "name": "@redstack/export-nucleation",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Schematic-Export über Nucleation (Adapter)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/core": "workspace:*",
+    "nucleation": "0.12.3"
+  }
+}

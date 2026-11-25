@@ -1,0 +1,19 @@
+{
+  "name": "@redstack/viz",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Visualisierungs-Datenmodell (Viewer folgt in Phase 4)",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/core": "workspace:*",
+    "@redstack/flow": "workspace:*"
+  }
+}

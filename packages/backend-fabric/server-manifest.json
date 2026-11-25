@@ -1,0 +1,18 @@
+{
+  "$comment": "Jede Datei mit fester Version und SHA-256. Fehlt ein Hash, bricht fetch-server.mjs ab (fail closed). Hashes beim ersten Einrichten auf deinem PC von der offiziellen Quelle prüfen und eintragen.",
+  "minecraft": "26.3",
+  "files": [
+    {
+      "name": "fabric-server-launcher.jar",
+      "url": null,
+      "sha256": null,
+      "source": "https://fabricmc.net/use/server/"
+    },
+    {
+      "name": "mods/fabric-carpet.jar",
+      "url": null,
+      "sha256": null,
+      "source": "https://modrinth.com/mod/carpet"
+    }
+  ]
+}
