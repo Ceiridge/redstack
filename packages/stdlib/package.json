@@ -2,7 +2,7 @@
   "name": "@redstack/stdlib",
   "version": "0.0.0",
   "private": true,
-  "description": "Standardbibliothek: Komponenten",
+  "description": "Standard library: components",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

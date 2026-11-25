@@ -12,8 +12,8 @@ import {
   steps,
 } from "./index.js";
 
-describe("Geometrie", () => {
-  it("dreht im Uhrzeigersinn: Norden → Osten → Süden → Westen", () => {
+describe("geometry", () => {
+  it("rotates clockwise: north → east → south → west", () => {
     assert.deepEqual(rotateVec([0, 0, -1], 1), [1, 0, 0]);
     assert.deepEqual(rotateVec([0, 0, -1], 2), [0, 0, 1]);
     assert.deepEqual(rotateVec([0, 0, -1], 3), [-1, 0, 0]);
@@ -22,22 +22,22 @@ describe("Geometrie", () => {
     assert.equal(rotateDir("up", 3), "up");
   });
 
-  it("steps rechnet relative Schritte um", () => {
+  it("steps converts relative steps", () => {
     assert.deepEqual(steps("forward", 2), [0, 0, -2]);
     assert.deepEqual(steps("right"), [1, 0, 0]);
   });
 });
 
-describe("Block-States", () => {
-  it("Repeater: facing zeigt zur Eingangsseite", () => {
+describe("block states", () => {
+  it("repeater: facing points at the input side", () => {
     assert.equal(B.repeater().signalTowards("forward").props.facing, "south");
   });
 
-  it("Hopper kann nicht nach oben ausgeben", () => {
+  it("hoppers cannot output upwards", () => {
     assert.throws(() => B.hopper().outputTo("up"));
   });
 
-  it("Drehung dreht facing, axis, Verbindungen und rotation", () => {
+  it("rotation turns facing, axis, connections and rotation", () => {
     const fence = B.oakFence().with({ north: true });
     assert.equal(rotateBlock(fence, 1).props.east, true);
     assert.equal(rotateBlock(fence, 1).props.north, false);
@@ -46,14 +46,14 @@ describe("Block-States", () => {
     assert.equal(rotateBlock({ id: "minecraft:oak_sign", props: { rotation: 14 } }, 1).props.rotation, 2);
   });
 
-  it("formatBlock sortiert Properties", () => {
+  it("formatBlock sorts properties", () => {
     assert.equal(formatBlock(B.hopper()), "minecraft:hopper[enabled=true,facing=down]");
   });
 });
 
 const Source = defineComponent({
   name: "Source",
-  description: "Test",
+  description: "test",
   status: "draft",
   defaults: { rate: 100 },
   build(c, { rate }) {
@@ -65,7 +65,7 @@ const Source = defineComponent({
 
 const Sink = defineComponent({
   name: "Sink",
-  description: "Test",
+  description: "test",
   status: "draft",
   defaults: {},
   build(c) {
@@ -75,8 +75,8 @@ const Sink = defineComponent({
   },
 });
 
-describe("Komponenten", () => {
-  it("meldet unplatzierte Blöcke", () => {
+describe("components", () => {
+  it("reports unplaced blocks", () => {
     const Bad = defineComponent({
       name: "Bad",
       description: "",
@@ -87,10 +87,10 @@ describe("Komponenten", () => {
         c.place(B.glass());
       },
     });
-    assert.throws(() => Bad.instantiate(), /ohne Position/);
+    assert.throws(() => Bad.instantiate(), /without position/);
   });
 
-  it("meldet doppelt belegte Zellen", () => {
+  it("reports cells occupied twice", () => {
     const Bad = defineComponent({
       name: "Bad",
       description: "",
@@ -102,22 +102,22 @@ describe("Komponenten", () => {
         c.place(B.sand()).above(a);
       },
     });
-    assert.throws(() => Bad.instantiate(), /doppelt/);
+    assert.throws(() => Bad.instantiate(), /occupied twice/);
   });
 });
 
 describe("Assembly", () => {
-  it("attach legt Ports übereinander, auch gedreht", () => {
+  it("attach lines up ports, also when rotated", () => {
     const a = new Assembly("t");
     const src = a.add(Source).at([10, 0, 10]).rotated(1);
     a.add(Sink).attach("in", src.port("out"));
     const r = a.resolve();
     const sink = r.instances.get("Sink#1")!;
-    assert.deepEqual(sink.origin, [11, 0, 10]); // Ausgang zeigt nach Osten
+    assert.deepEqual(sink.origin, [11, 0, 10]); // output points east
     assert.deepEqual(runChecks(r).filter((d) => d.severity !== "info"), []);
   });
 
-  it("erkennt falsch ausgerichtete Verbindungen", () => {
+  it("detects misaligned connections", () => {
     const a = new Assembly("t");
     const src = a.add(Source).at([0, 0, 0]);
     const sink = a.add(Sink).at([5, 0, 0]);
@@ -126,14 +126,38 @@ describe("Assembly", () => {
     assert.ok(codes.includes("port-misaligned"));
   });
 
-  it("erkennt Überlappung zwischen Instanzen", () => {
+  it("detects overlap between instances", () => {
     const a = new Assembly("t");
     a.add(Sink).at([0, 0, 0]);
     a.add(Sink).at([0, 0, 0]);
     assert.ok(runChecks(a.resolve()).some((d) => d.code === "overlap"));
   });
 
-  it("row platziert relativ zur Drehung der ersten Instanz", () => {
+  it("two components may reserve the same free cell", () => {
+    const Keep = defineComponent({
+      name: "Keep",
+      description: "",
+      status: "draft",
+      defaults: {},
+      build(c) {
+        c.origin(B.air());
+      },
+    });
+    const a = new Assembly("t");
+    a.add(Keep).at([0, 0, 0]);
+    a.add(Keep).at([0, 0, 0]);
+    assert.deepEqual(runChecks(a.resolve()).filter((d) => d.severity === "error"), []);
+  });
+
+  it("reports a block placed into a reserved cell", () => {
+    const a = new Assembly("t");
+    const Keep = defineComponent({ name: "Keep", description: "", status: "draft", defaults: {}, build: (c) => void c.origin(B.air()) });
+    a.add(Keep).at([0, 0, 0]);
+    a.add(Sink).at([0, 0, 0]);
+    assert.ok(runChecks(a.resolve()).some((d) => d.code === "reserved-cell"));
+  });
+
+  it("row follows the rotation of the first instance", () => {
     const a = new Assembly("t");
     const row = a.row(Sink, 3, steps("forward", 2));
     row[0]!.at([0, 0, 0]).rotated(1);

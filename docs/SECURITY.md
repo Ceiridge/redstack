@@ -1,35 +1,36 @@
-# Sicherheit und Abhängigkeiten
+# Security and dependencies
 
-Viele Bibliotheken in diesem Umfeld sind klein und von Einzelpersonen gepflegt. Deshalb gilt:
+Many libraries in this space are small and maintained by individuals. Therefore:
 
-## npm-Pakete
-- **Exakte Versionen**, kein `^`/`~` (`save-exact=true` in `.npmrc`).
-- **Lockfile** (`pnpm-lock.yaml`) ist im Repo; CI installiert mit `--frozen-lockfile`.
-- **Keine Install-Skripte**: `ignore-scripts=true` und `onlyBuiltDependencies: []` mit `strictDepBuilds`. Ein Paket, das Skripte braucht, muss bewusst freigeschaltet werden.
-- **Karenzzeit**: `minimumReleaseAge` = 7 Tage. Frisch veröffentlichte (evtl. kompromittierte) Versionen werden nicht installiert.
-- **Updates nur manuell** mit Blick auf den Diff des Pakets. Keine automatischen Merges.
-- So wenige Abhängigkeiten wie möglich. Aktuell zur Laufzeit: nur `nucleation`.
+## npm packages
+- **Exact versions**, no `^`/`~` (`save-exact=true` in `.npmrc`).
+- **Lockfile** (`pnpm-lock.yaml`) is committed; CI installs with `--frozen-lockfile`.
+- **No install scripts**: `ignore-scripts=true` and `onlyBuiltDependencies: []` with `strictDepBuilds`. A package that needs scripts must be allowed explicitly.
+- **Cool-down**: `minimumReleaseAge` = 7 days. Freshly published (possibly compromised) versions are not installed.
+- **Updates only by hand**, after looking at the package diff. No automatic merges.
+- As few dependencies as possible. At runtime currently only `nucleation`.
 
-| Paket | Version | Grund |
+| Package | Version | Reason |
 |---|---|---|
-| nucleation | 0.12.3 | Schematic-Export (0.12.4 war beim Einrichten jünger als 7 Tage) |
-| typescript | 6.0.3 | Build (dev) |
-| @types/node | 22.20.5 | Typen (dev) |
+| nucleation | 0.12.3 | schematic export (0.12.4 was younger than 7 days at setup) |
+| typescript | 6.0.3 | build (dev) |
+| @types/node | 22.20.5 | types (dev) |
 
-## Git-Submodules
-- `vendor/nucleation` ist auf den Commit von Tag `v0.12.3` festgenagelt (`81a57e3`), passend zur npm-Version.
-- `update = none`: wird bei normalem Klonen **nicht** ausgecheckt. Nur bei Bedarf (Simulations-Build, Phase 3):
+## Git submodules
+- `vendor/nucleation` is pinned to the commit of tag `v0.12.3` (`81a57e3`), matching the npm version.
+- `update = none`: not checked out on a normal clone. Only when needed (simulation build):
   `git -c submodule.vendor/nucleation.update=checkout submodule update --init vendor/nucleation`
-- Neue Commits nur nach Durchsicht des Diffs übernehmen.
+- Take new commits only after reviewing the diff.
 
 ## GitHub Actions
-- Auf Commit-SHAs festgenagelt, der Tag steht im Kommentar.
-- Minimale Rechte (`contents: read`), keine Credentials im Checkout.
+- Pinned to commit SHAs, the tag is in a comment.
+- Minimal permissions (`contents: read`), no credentials persisted on checkout.
 
-## Server, Mods, Testwelten
-- Nie im Repo. Download über `packages/backend-fabric/scripts/fetch-server.mjs` mit SHA-256 aus dem Manifest; ohne Hash bricht das Skript ab.
-- Testserver laufen im Container ohne Netzwerkzugang – Mods sind beliebiger Java-Code.
-- Ungeprüfte Mods (z. B. FarmBench) höchstens dort.
+## Test server
+- Never in the repository. `packages/backend-fabric/scripts/server.mjs` downloads the files listed in `server-manifest.json` and refuses any file whose SHA-256 does not match.
+- Upstream checksums: Java (Adoptium), server.jar (Mojang SHA-1), Carpet (Modrinth SHA-512). The Fabric launcher has no published checksum; its hash was recorded on first download (trust on first use). On first start it fetches Fabric Loader libraries from maven.fabricmc.net over HTTPS – not pinned by us.
+- The server listens on 127.0.0.1 only, with a random RCON password. Mods are arbitrary Java code; running the server in a container without network access is planned (phase 3).
+- Unreviewed mods (e.g. FarmBench) only in such a container.
 
-## Geheimnisse
-- API-Keys, RCON-Passwörter nur in `.env` (in `.gitignore`). Vorlage: `.env.example`.
+## Secrets
+- API keys and RCON passwords only in `.env` (in `.gitignore`). Template: `.env.example`.

@@ -11,13 +11,13 @@ const Probe = defineComponent({
   build(c) {
     const h = c.origin(B.hopper().outputTo("forward"));
     c.place(B.comparator("subtract").signalTowards("right")).below(h);
-    c.place(B.air()).above(h); // freigehalten, darf nicht exportiert werden
+    c.place(B.air()).above(h); // reserved, must not be exported
   },
 });
 
-describe("Export über Nucleation", () => {
+describe("export via Nucleation", () => {
   for (const rotation of [0, 1, 2, 3]) {
-    it(`Litematic-Roundtrip erhält alle Block-States (Drehung ${rotation})`, () => {
+    it(`litematic round trip keeps all block states (rotation ${rotation})`, () => {
       const a = new Assembly("probe");
       a.add(Probe).at([3, 5, 7]).rotated(rotation);
       const resolved = a.resolve();

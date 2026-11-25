@@ -1,9 +1,9 @@
 /**
- * Geometrie: Positionen, Richtungen, Drehungen.
+ * Geometry: positions, directions, rotations.
  *
- * Konvention: Jede Komponente hat ein lokales Koordinatensystem.
- * "forward" zeigt bei Drehung 0 nach Norden (-z), "right" nach Osten (+x).
- * Eine Drehung ist eine Anzahl Vierteldrehungen im Uhrzeigersinn (von oben gesehen).
+ * Convention: every component has a local frame. At rotation 0, "forward"
+ * points north (-z) and "right" points east (+x). A rotation is a number of
+ * clockwise quarter turns, seen from above.
  */
 
 export type Vec3 = readonly [number, number, number];
@@ -11,10 +11,10 @@ export type Vec3 = readonly [number, number, number];
 export type HorizontalDir = "north" | "east" | "south" | "west";
 export type Dir = HorizontalDir | "up" | "down";
 
-/** Richtungen relativ zur Komponente. Werden beim Platzieren in absolute Richtungen übersetzt. */
+/** Directions relative to the component; translated to absolute directions on placement. */
 export type RelDir = "forward" | "back" | "left" | "right" | "up" | "down";
 
-/** Anzahl Vierteldrehungen im Uhrzeigersinn: 0, 1, 2, 3 */
+/** Number of clockwise quarter turns: 0, 1, 2, 3 */
 export type Rotation = 0 | 1 | 2 | 3;
 
 export const DIR_VECTORS: Readonly<Record<Dir, Vec3>> = {
@@ -37,7 +37,7 @@ export const OPPOSITE: Readonly<Record<Dir, Dir>> = {
   down: "up",
 };
 
-/** Lokale Richtung bei Drehung 0 → (lokal-)absolute Richtung */
+/** Relative direction → local compass direction (before the component is rotated) */
 const REL_TO_LOCAL: Readonly<Record<RelDir, Dir>> = {
   forward: "north",
   back: "south",
@@ -71,7 +71,7 @@ export function normalizeRotation(r: number): Rotation {
   return (((r % 4) + 4) % 4) as Rotation;
 }
 
-/** Dreht einen Vektor um die y-Achse, im Uhrzeigersinn von oben gesehen. */
+/** Rotates a vector around the y axis, clockwise seen from above. */
 export function rotateVec(v: Vec3, rot: Rotation): Vec3 {
   let [x, y, z] = v;
   for (let i = 0; i < rot; i++) {
@@ -81,7 +81,7 @@ export function rotateVec(v: Vec3, rot: Rotation): Vec3 {
     x = nx;
     z = nz;
   }
-  // -0 vermeiden, damit Schlüssel stabil bleiben
+  // avoid -0 so that keys stay stable
   return [x + 0, y, z + 0];
 }
 
@@ -91,12 +91,12 @@ export function rotateDir(d: Dir, rot: Rotation): Dir {
   return HORIZONTAL_CW[(i + rot) % 4]!;
 }
 
-/** Relative Richtung → lokale Himmelsrichtung (vor Drehung der Komponente). */
+/** Relative direction → local compass direction (before the component is rotated). */
 export function relToLocal(r: RelDir): Dir {
   return REL_TO_LOCAL[r];
 }
 
-/** Versatz in Schritten entlang einer relativen Richtung, z. B. steps("forward", 2). */
+/** Offset of n steps along a relative direction, e.g. steps("forward", 2). */
 export function steps(dir: RelDir, n = 1): Vec3 {
   return scale(DIR_VECTORS[relToLocal(dir)], n);
 }

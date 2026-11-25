@@ -2,7 +2,7 @@
   "name": "@redstack/market-static",
   "version": "0.0.0",
   "private": true,
-  "description": "Preisquelle aus lokaler JSON-Datei (für jeden SMP)",
+  "description": "Price source from a local JSON file (any SMP)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

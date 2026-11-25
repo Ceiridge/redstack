@@ -18,7 +18,7 @@ const processes = new Map<string, Process>([
     "mobfarm",
     {
       id: "mobfarm",
-      name: "Mobfarm",
+      name: "Mob farm",
       inputsPerHour: {},
       outputsPerHour: { "minecraft:bone": 1000 },
       site: { hostileMobCapShare: 1, needsPlayerNearby: true },
@@ -28,7 +28,7 @@ const processes = new Map<string, Process>([
     "bonemeal",
     {
       id: "bonemeal",
-      name: "Knochenmehl",
+      name: "Bone meal",
       inputsPerHour: { "minecraft:bone": 500 },
       outputsPerHour: { "minecraft:bone_meal": 1500 },
       site: { needsPlayerNearby: false },
@@ -51,21 +51,21 @@ const ctx = (accounts = 1): EvaluationContext => ({
   ]),
 });
 
-describe("Plan-Bewertung", () => {
-  it("verrechnet interne Nutzung, Absatzgrenze und Erlös", () => {
+describe("plan evaluation", () => {
+  it("accounts for internal use, market limits and revenue", () => {
     const r = evaluatePlan({ entries: [{ processId: "mobfarm", siteId: "a", count: 1 }, { processId: "bonemeal", siteId: "a", count: 1 }] }, ctx());
     assert.equal(r.netItemsPerHour["minecraft:bone"], 500);
     assert.equal(r.unsoldPerHour["minecraft:bone_meal"], 500);
     assert.equal(r.revenuePerHour, 500 * 1 + 1000 * 0.5);
   });
 
-  it("zwei Mobfarmen am selben AFK-Spot teilen sich das Mob-Cap", () => {
+  it("two mob farms at the same AFK spot share the mob cap", () => {
     const r = evaluatePlan({ entries: [{ processId: "mobfarm", siteId: "a", count: 2 }] }, ctx());
     assert.equal(r.netItemsPerHour["minecraft:bone"], 1000);
     assert.ok(r.diagnostics.some((d) => d.code === "mob-cap-shared"));
   });
 
-  it("mehr AFK-Spots als Accounts ist ein Fehler", () => {
+  it("more AFK spots than accounts is an error", () => {
     const r = evaluatePlan({ entries: [{ processId: "mobfarm", siteId: "a", count: 1 }, { processId: "mobfarm", siteId: "b", count: 1 }] }, ctx(1));
     assert.ok(r.diagnostics.some((d) => d.code === "too-many-afk-sites"));
   });

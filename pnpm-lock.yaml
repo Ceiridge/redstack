@@ -17,6 +17,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@redstack/backend-fabric':
+        specifier: workspace:*
+        version: link:../../packages/backend-fabric
       '@redstack/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -26,6 +29,9 @@ importers:
       '@redstack/flow':
         specifier: workspace:*
         version: link:../../packages/flow
+      '@redstack/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@redstack/viz':
         specifier: workspace:*
         version: link:../../packages/viz
@@ -38,9 +44,18 @@ importers:
       '@redstack/stdlib':
         specifier: workspace:*
         version: link:../packages/stdlib
+      '@redstack/testing':
+        specifier: workspace:*
+        version: link:../packages/testing
 
   packages/backend-fabric:
     dependencies:
+      '@redstack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@redstack/flow':
+        specifier: workspace:*
+        version: link:../flow
       '@redstack/testing':
         specifier: workspace:*
         version: link:../testing

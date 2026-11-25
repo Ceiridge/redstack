@@ -2,7 +2,7 @@
   "name": "@redstack/economy",
   "version": "0.0.0",
   "private": true,
-  "description": "Wirtschaft: Prozesse, Märkte, Standorte (AFK-Spots), Plan-Bewertung",
+  "description": "Economy: processes, markets, sites (AFK spots), plan evaluation",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

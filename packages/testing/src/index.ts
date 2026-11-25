@@ -1,18 +1,18 @@
 /**
- * Test-Schnittstelle. Backends (Fabric-Server, Paper-Server, Redstone-Simulator)
- * implementieren TestBackend; Szenarien und Berichte sind backend-unabhängig.
+ * Test interface. Backends (Fabric server, Paper server, redstone simulator)
+ * implement TestBackend; scenarios and reports are backend-independent.
  *
- * Stufen:
- *   0  statische Checks (@redstack/core)
- *   1  Flussmodell (@redstack/flow)
- *   2  Komponententest auf einem Backend
- *   3  ganze Assembly, mehrere Läufe, Statistik
+ * Stages:
+ *   0  static checks (@redstack/core)
+ *   1  flow model (@redstack/flow)
+ *   2  component test on a backend
+ *   3  whole assembly, several runs, statistics
  */
 
 import type { ResolvedAssembly, Vec3 } from "@redstack/core";
-import type { FlowAnalysis } from "@redstack/flow";
+import { type FlowAnalysis, analyzeFlow } from "@redstack/flow";
 
-/** Was ein Backend simulieren kann. Szenarien verlangen Fähigkeiten, Backends erfüllen sie. */
+/** What a backend can simulate. Scenarios require capabilities, backends provide them. */
 export type Capability =
   | "redstone"
   | "block-updates"
@@ -24,28 +24,25 @@ export type Capability =
   | "fake-player";
 
 export interface Environment {
-  /** z. B. "void", "flat", "copy-of-terrain" */
   readonly terrain: "void" | "flat" | "terrain";
   readonly biome?: string;
-  /** Position des AFK-Spielers relativ zum Assembly-Ursprung */
+  /** Position of the AFK player in assembly coordinates. Default: above the centre of the assembly. */
   readonly afkSpot?: Vec3;
   readonly simulationDistance?: number;
   readonly gamerules?: Readonly<Record<string, string | number | boolean>>;
-  /** Server-Profil, z. B. "vanilla", "paper-default", "donut-guess" */
+  /** Server profile, e.g. "vanilla", "paper-default", "donut-guess" */
   readonly serverProfile?: string;
 }
 
+/** Preparation actions. Positions in assembly coordinates. More (power, chunk reload) will follow. */
 export type Action =
   | { readonly type: "insert"; readonly at: Vec3; readonly item: string; readonly count: number }
-  | { readonly type: "power"; readonly at: Vec3; readonly ticks: number }
-  | { readonly type: "reload-chunks" }
   | { readonly type: "wait"; readonly ticks: number };
 
 export type Expectation =
   | { readonly type: "rate-at-least"; readonly item: string; readonly perHour: number }
   | { readonly type: "no-ground-items" }
   | { readonly type: "no-stuck-hoppers" }
-  | { readonly type: "container-contains"; readonly at: Vec3; readonly item: string; readonly atLeast: number }
   | { readonly type: "matches-flow-model"; readonly tolerance: number };
 
 export interface Scenario {
@@ -54,13 +51,46 @@ export interface Scenario {
   readonly environment: Environment;
   readonly requires: readonly Capability[];
   readonly durationTicks: number;
-  /** Anzahl unabhängiger Läufe, für Statistik bei Zufallsmechaniken */
+  /** Ticks at the start that do not count towards the rate (warm-up) */
+  readonly warmupTicks: number;
+  /** Interval between samples */
+  readonly sampleEveryTicks: number;
+  /** Number of independent runs, for statistics on random mechanics */
   readonly repeats: number;
+  /** Actions before the start (filling containers etc.) */
   readonly actions: readonly Action[];
   readonly expectations: readonly Expectation[];
 }
 
-/** Ein Ereignis mit Ort – das, was die KI zum Reparieren braucht. */
+export interface ScenarioOptions {
+  readonly name?: string;
+  readonly environment?: Partial<Environment>;
+  readonly requires?: readonly Capability[];
+  readonly durationTicks: number;
+  readonly warmupTicks?: number;
+  readonly sampleEveryTicks?: number;
+  readonly repeats?: number;
+  readonly actions?: readonly Action[];
+  readonly expectations?: readonly Expectation[];
+}
+
+/** Scenario with sensible defaults: empty world, default game rules, one run. */
+export function scenario(assembly: ResolvedAssembly, o: ScenarioOptions): Scenario {
+  return {
+    name: o.name ?? assembly.name,
+    assembly,
+    environment: { terrain: "void", serverProfile: "vanilla", ...o.environment },
+    requires: o.requires ?? ["items", "block-updates"],
+    durationTicks: o.durationTicks,
+    warmupTicks: o.warmupTicks ?? 0,
+    sampleEveryTicks: o.sampleEveryTicks ?? Math.max(20, Math.floor(o.durationTicks / 20)),
+    repeats: o.repeats ?? 1,
+    actions: o.actions ?? [],
+    expectations: o.expectations ?? [],
+  };
+}
+
+/** An event with a location – what an AI needs to repair a design. */
 export interface TestEvent {
   readonly tick: number;
   readonly type: "stuck-hopper" | "ground-items" | "item-destroyed" | "entity-escaped" | "custom";
@@ -69,13 +99,20 @@ export interface TestEvent {
   readonly data?: Readonly<Record<string, unknown>>;
 }
 
+export interface Sample {
+  readonly tick: number;
+  /** Item → count across all storage */
+  readonly stored: Readonly<Record<string, number>>;
+}
+
 export interface RunResult {
   readonly run: number;
   readonly ticks: number;
-  /** gemessene Raten je Item, hochgerechnet auf eine Stunde */
+  /** Measured rate per item, scaled to one hour (excluding warm-up) */
   readonly measuredPerHour: Readonly<Record<string, number>>;
+  readonly samples: readonly Sample[];
   readonly events: readonly TestEvent[];
-  readonly msptAvg?: number;
+  readonly wallClockMs: number;
 }
 
 export interface ExpectationResult {
@@ -90,7 +127,7 @@ export interface TestReport {
   readonly backend: string;
   readonly startedAt: string;
   readonly runs: readonly RunResult[];
-  /** Mittelwert und Standardabweichung über die Läufe */
+  /** Mean and standard deviation across runs */
   readonly summary: Readonly<Record<string, { readonly mean: number; readonly stdev: number }>>;
   readonly expectations: readonly ExpectationResult[];
   readonly passed: boolean;
@@ -118,10 +155,47 @@ export function summarize(runs: readonly RunResult[]): Record<string, { mean: nu
   return out;
 }
 
+/** Rate per hour from samples, starting after the warm-up. */
+export function ratesFromSamples(samples: readonly Sample[], warmupTicks: number): Record<string, number> {
+  const start = samples.find((s) => s.tick >= warmupTicks) ?? samples[0];
+  const end = samples[samples.length - 1];
+  if (!start || !end || end.tick <= start.tick) return {};
+  const items = new Set([...Object.keys(start.stored), ...Object.keys(end.stored)]);
+  const out: Record<string, number> = {};
+  for (const item of items) {
+    out[item] = (((end.stored[item] ?? 0) - (start.stored[item] ?? 0)) / (end.tick - start.tick)) * 72_000;
+  }
+  return out;
+}
+
+/** Evaluates a scenario's expectations against its runs. */
+export function evaluateExpectations(s: Scenario, runs: readonly RunResult[], flow: FlowAnalysis = analyzeFlow(s.assembly)): ExpectationResult[] {
+  const summary = summarize(runs);
+  const events = runs.flatMap((r) => r.events);
+  return s.expectations.map((e): ExpectationResult => {
+    switch (e.type) {
+      case "rate-at-least": {
+        const m = summary[e.item]?.mean ?? 0;
+        return { expectation: e, passed: m >= e.perHour, message: `${e.item}: ${m.toFixed(1)}/h measured, at least ${e.perHour}/h expected.` };
+      }
+      case "no-ground-items": {
+        const n = events.filter((x) => x.type === "ground-items").length;
+        return { expectation: e, passed: n === 0, message: n ? `Items on the ground in ${n} run(s).` : "No items on the ground." };
+      }
+      case "no-stuck-hoppers": {
+        const n = events.filter((x) => x.type === "stuck-hopper").length;
+        return { expectation: e, passed: n === 0, message: n ? `${n} hopper(s) backed up.` : "No hoppers backed up." };
+      }
+      case "matches-flow-model":
+        return compareWithModel(summary, flow, e.tolerance);
+    }
+  });
+}
+
 /**
- * Vergleicht Messung mit Flussmodell. Weicht ein Item stärker ab als die
- * Toleranz (relativ), ist entweder das Ratenmodell der Komponente falsch
- * oder die Farm kaputt – beides muss behoben werden.
+ * Compares measurement with the flow model. If an item deviates by more than
+ * the (relative) tolerance, either a component's rate model is wrong or the
+ * farm is broken – both need fixing.
  */
 export function compareWithModel(
   summary: TestReport["summary"],
@@ -133,12 +207,12 @@ export function compareWithModel(
     const measured = summary[item]?.mean ?? 0;
     const rel = predicted === 0 ? (measured === 0 ? 0 : Infinity) : Math.abs(measured - predicted) / predicted;
     if (rel > tolerance) {
-      problems.push(`${item}: Modell ${predicted.toFixed(1)}/h, gemessen ${measured.toFixed(1)}/h (${(rel * 100).toFixed(0)} % Abweichung)`);
+      problems.push(`${item}: model ${predicted.toFixed(1)}/h, measured ${measured.toFixed(1)}/h (${(rel * 100).toFixed(0)}% off)`);
     }
   }
   return {
     expectation: { type: "matches-flow-model", tolerance },
     passed: problems.length === 0,
-    message: problems.length ? problems.join("; ") : "Messung passt zum Modell.",
+    message: problems.length ? problems.join("; ") : "Measurement matches the model.",
   };
 }

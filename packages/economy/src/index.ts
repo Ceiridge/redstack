@@ -1,26 +1,26 @@
 /**
- * Wirtschaftsmodell: Was lohnt sich wo zu bauen?
+ * Economy model: what is worth building, and where?
  *
- * Unabhängig von Blöcken und von einem bestimmten Server. Server-spezifisches
- * (Handelskanäle, Gebühren, Preisdaten) kommt aus Markt-Modulen wie
- * @redstack/market-static oder @redstack/market-donut.
+ * Independent of blocks and of any particular server. Server specifics
+ * (sales channels, fees, price data) come from market modules such as
+ * @redstack/market-static or @redstack/market-donut.
  *
- * Ein Prozess ist alles mit Inputs und Outputs pro Stunde: eine Farm, ein
- * Schmelzofen-Array, Villager-Handel. Prozesse laufen an Standorten
- * (AFK-Spots), die sich Ressourcen wie das Mob-Cap teilen.
+ * A process is anything with inputs and outputs per hour: a farm, a furnace
+ * array, villager trading. Processes run at sites (AFK spots) that share
+ * resources such as the mob cap.
  */
 
 export type ItemRates = Readonly<Record<string, number>>;
 
-/** Was ein Prozess von seinem Standort braucht */
+/** What a process needs from its site */
 export interface SiteNeeds {
-  /** Anteil am feindlichen Mob-Cap des Standorts, den der Prozess für seine Nennrate braucht (0–1) */
+  /** Share of the site's hostile mob cap the process needs for its rated output (0–1) */
   readonly hostileMobCapShare?: number;
-  /** Anteil am passiven Mob-Cap */
+  /** Share of the passive mob cap */
   readonly passiveMobCapShare?: number;
-  /** Geschätzte Server-Last in ms pro Tick */
+  /** Estimated server load in ms per tick */
   readonly msptCost?: number;
-  /** Muss im Simulationsradius des Spielers liegen (sonst läuft er nicht) */
+  /** Must be within a player's simulation distance, or it does not run */
   readonly needsPlayerNearby: boolean;
 }
 
@@ -29,10 +29,10 @@ export interface Process {
   readonly name: string;
   readonly inputsPerHour: ItemRates;
   readonly outputsPerHour: ItemRates;
-  /** Einmalige Baukosten in Items */
+  /** One-off build cost in items */
   readonly buildCost?: ItemRates;
   readonly site: SiteNeeds;
-  /** Herkunft der Zahlen, z. B. Flussmodell einer Assembly oder Messung */
+  /** Where the numbers come from, e.g. an assembly's flow model or a measurement */
   readonly source?: { readonly kind: "assembly-model" | "measured" | "manual"; readonly ref?: string };
 }
 
@@ -42,7 +42,7 @@ export interface Site {
   readonly id: string;
   readonly name: string;
   readonly kind: SiteKind;
-  /** Ein Account kann nur an einem AFK-Spot gleichzeitig sein */
+  /** An account can only be AFK at one spot at a time */
   readonly needsAccount: boolean;
   readonly msptBudget?: number;
 }
@@ -57,15 +57,15 @@ export interface Plan {
   readonly entries: readonly PlanEntry[];
 }
 
-// ---------- Märkte ----------
+// ---------- Markets ----------
 
 export interface Quote {
   readonly item: string;
-  /** Erlös pro Item beim Verkauf (nach Gebühren des Kanals) */
+  /** Revenue per item when selling (after channel fees) */
   readonly sellPrice?: number;
-  /** Kosten pro Item beim Einkauf */
+  /** Cost per item when buying */
   readonly buyPrice?: number;
-  /** Wie viel sich pro Stunde verkaufen lässt, ohne den Preis zu drücken */
+  /** How much can be sold per hour without pushing the price down */
   readonly maxSellPerHour?: number;
   readonly channel: string;
   readonly asOf: Date;
@@ -80,12 +80,12 @@ export interface PriceSource {
 export interface SalesChannel {
   readonly id: string;
   readonly name: string;
-  /** Anteil, der beim Verkauf abgezogen wird (0–1) */
+  /** Share deducted when selling (0–1) */
   readonly feeRate?: number;
   readonly notes?: string;
 }
 
-/** Beschreibung eines Servers mit Wirtschaft (Donut, andere SMPs, eigener Server) */
+/** Description of a server economy (Donut, other SMPs, your own server) */
 export interface MarketProfile {
   readonly id: string;
   readonly name: string;
@@ -94,7 +94,7 @@ export interface MarketProfile {
   readonly notes?: readonly string[];
 }
 
-// ---------- Bewertung ----------
+// ---------- Evaluation ----------
 
 export interface EvaluationDiagnostic {
   readonly severity: "error" | "warning" | "info";
@@ -107,7 +107,7 @@ export interface SiteUsage {
   readonly hostileMobCap: number;
   readonly passiveMobCap: number;
   readonly mspt: number;
-  /** Faktor, mit dem mob-abhängige Prozesse an diesem Standort skaliert wurden */
+  /** Factor applied to mob-dependent processes at this site */
   readonly mobEfficiency: number;
 }
 
@@ -115,9 +115,9 @@ export interface PlanEvaluation {
   readonly revenuePerHour: number;
   readonly purchaseCostPerHour: number;
   readonly profitPerHour: number;
-  /** Netto pro Item: positiv = Überschuss, negativ = Bedarf */
+  /** Net per item: positive = surplus, negative = demand */
   readonly netItemsPerHour: ItemRates;
-  /** Überschuss, der über die Absatzgrenze hinausgeht */
+  /** Surplus beyond what the market absorbs */
   readonly unsoldPerHour: ItemRates;
   readonly buildCostValue: number;
   readonly paybackHours: number;
@@ -129,29 +129,29 @@ export interface EvaluationContext {
   readonly processes: ReadonlyMap<string, Process>;
   readonly sites: ReadonlyMap<string, Site>;
   readonly quotes: ReadonlyMap<string, Quote>;
-  /** Anzahl Accounts, die gleichzeitig AFK sein können */
+  /** Number of accounts that can be AFK at the same time */
   readonly accounts: number;
 }
 
 /**
- * Bewertet einen konkreten Plan. Grundlage für jeden Optimierer:
- * Ein Optimierer schlägt Pläne vor, diese Funktion rechnet sie nach.
+ * Evaluates a concrete plan. The basis for any optimizer: an optimizer
+ * proposes plans, this function checks them.
  */
 export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation {
   const diags: EvaluationDiagnostic[] = [];
   const net: Record<string, number> = {};
   const usage = new Map<string, { hostile: number; passive: number; mspt: number }>();
 
-  // 1. Standort-Auslastung
+  // 1. Site load
   for (const e of plan.entries) {
     const p = ctx.processes.get(e.processId);
     const s = ctx.sites.get(e.siteId);
     if (!p) {
-      diags.push({ severity: "error", code: "unknown-process", message: `Prozess ${e.processId} unbekannt.` });
+      diags.push({ severity: "error", code: "unknown-process", message: `Unknown process ${e.processId}.` });
       continue;
     }
     if (!s) {
-      diags.push({ severity: "error", code: "unknown-site", message: `Standort ${e.siteId} unbekannt.` });
+      diags.push({ severity: "error", code: "unknown-site", message: `Unknown site ${e.siteId}.` });
       continue;
     }
     const u = usage.get(s.id) ?? { hostile: 0, passive: 0, mspt: 0 };
@@ -166,7 +166,7 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
     diags.push({
       severity: "error",
       code: "too-many-afk-sites",
-      message: `Plan nutzt ${accountSites.length} AFK-Spots, aber nur ${ctx.accounts} Account(s) können gleichzeitig AFK sein.`,
+      message: `The plan uses ${accountSites.length} AFK spots, but only ${ctx.accounts} account(s) can be AFK at the same time.`,
     });
   }
 
@@ -179,21 +179,21 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
       diags.push({
         severity: "warning",
         code: "mob-cap-shared",
-        message: `${site.name}: Farmen brauchen zusammen ${(Math.max(u.hostile, u.passive) * 100).toFixed(0)} % des Mob-Caps. Mob-Farmen dort laufen nur mit ~${(mobEfficiency * 100).toFixed(0)} % (grobe Näherung).`,
+        message: `${site.name}: farms need ${(Math.max(u.hostile, u.passive) * 100).toFixed(0)}% of the mob cap together. Mob farms there run at ~${(mobEfficiency * 100).toFixed(0)}% (rough approximation).`,
       });
     }
     if (site.msptBudget !== undefined && u.mspt > site.msptBudget) {
       diags.push({
         severity: "warning",
         code: "mspt-budget",
-        message: `${site.name}: geschätzte Last ${u.mspt.toFixed(1)} ms/Tick über Budget ${site.msptBudget}.`,
+        message: `${site.name}: estimated load ${u.mspt.toFixed(1)} ms/tick exceeds the budget of ${site.msptBudget}.`,
       });
     }
     efficiency.set(siteId, mobEfficiency);
     sites.push({ siteId, hostileMobCap: u.hostile, passiveMobCap: u.passive, mspt: u.mspt, mobEfficiency });
   }
 
-  // 2. Item-Bilanz
+  // 2. Item balance
   const buildCost: Record<string, number> = {};
   for (const e of plan.entries) {
     const p = ctx.processes.get(e.processId);
@@ -205,7 +205,7 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
     for (const [i, n] of Object.entries(p.buildCost ?? {})) buildCost[i] = (buildCost[i] ?? 0) + n * e.count;
   }
 
-  // 3. Verkauf und Einkauf
+  // 3. Selling and buying
   let revenue = 0;
   let purchase = 0;
   const unsold: Record<string, number> = {};
@@ -214,7 +214,7 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
     if (r > 0) {
       if (q?.sellPrice === undefined) {
         unsold[item] = r;
-        diags.push({ severity: "info", code: "no-sell-price", message: `Kein Verkaufspreis für ${item}; Überschuss wird nicht bewertet.` });
+        diags.push({ severity: "info", code: "no-sell-price", message: `No sell price for ${item}; surplus is not valued.` });
         continue;
       }
       const sellable = q.maxSellPerHour !== undefined ? Math.min(r, q.maxSellPerHour) : r;
@@ -223,13 +223,17 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
         diags.push({
           severity: "warning",
           code: "market-saturated",
-          message: `${item}: ${r.toFixed(0)}/h produziert, Markt nimmt nur ~${sellable.toFixed(0)}/h auf.`,
+          message: `${item}: ${r.toFixed(0)}/h produced, the market only absorbs ~${sellable.toFixed(0)}/h.`,
         });
       }
       revenue += sellable * q.sellPrice;
     } else if (r < 0) {
       if (q?.buyPrice === undefined) {
-        diags.push({ severity: "error", code: "input-unavailable", message: `${item} wird gebraucht (${(-r).toFixed(1)}/h), ist aber weder produziert noch käuflich.` });
+        diags.push({
+          severity: "error",
+          code: "input-unavailable",
+          message: `${item} is needed (${(-r).toFixed(1)}/h) but neither produced nor purchasable.`,
+        });
         continue;
       }
       purchase += -r * q.buyPrice;
@@ -240,7 +244,7 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
   for (const [item, n] of Object.entries(buildCost)) {
     const q = ctx.quotes.get(item);
     if (q?.buyPrice === undefined) {
-      diags.push({ severity: "info", code: "no-build-price", message: `Kein Einkaufspreis für Baumaterial ${item}; nicht in Baukosten enthalten.` });
+      diags.push({ severity: "info", code: "no-build-price", message: `No buy price for building material ${item}; not included in build cost.` });
       continue;
     }
     buildCostValue += n * q.buyPrice;
@@ -261,9 +265,9 @@ export function evaluatePlan(plan: Plan, ctx: EvaluationContext): PlanEvaluation
 }
 
 /**
- * Optimierer-Schnittstelle. Geplant (Phase 2b): gemischt-ganzzahlige lineare
- * Optimierung über Anzahl je Prozess und Standort, mit Mob-Cap, Accounts,
- * Absatzgrenzen und Lastbudget als Nebenbedingungen.
+ * Optimizer interface. Planned (phase 2b): mixed-integer linear programming
+ * over the count per process and site, with mob cap, accounts, market limits
+ * and load budget as constraints.
  */
 export interface Optimizer {
   readonly id: string;

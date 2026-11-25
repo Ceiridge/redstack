@@ -3,9 +3,9 @@ packages:
   - "apps/*"
   - "examples"
 
-# Lieferketten-Schutz (siehe docs/SECURITY.md)
-# Neue Paketversionen erst nach 7 Tagen zulassen (Minuten).
+# Supply-chain protection (see docs/SECURITY.md)
+# Only allow package versions that are at least 7 days old (minutes).
 minimumReleaseAge: 10080
-# Keine Install-Skripte von Abhängigkeiten. Jede Ausnahme muss hier explizit stehen.
+# No install scripts from dependencies. Every exception must be listed here explicitly.
 onlyBuiltDependencies: []
 strictDepBuilds: true

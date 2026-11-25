@@ -5,6 +5,6 @@ out/
 .env
 .env.*
 !.env.example
-# Server-Binaries und Testwelten werden per Skript geladen, nie committet
+# Server binaries and test worlds are downloaded by script, never committed
 servers/
 worlds/

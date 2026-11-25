@@ -2,7 +2,7 @@
   "name": "@redstack/examples",
   "version": "0.0.0",
   "private": true,
-  "description": "Beispiel-Farmen",
+  "description": "Example farms and in-game scenarios",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@redstack/core": "workspace:*",
-    "@redstack/stdlib": "workspace:*"
+    "@redstack/stdlib": "workspace:*",
+    "@redstack/testing": "workspace:*"
   }
 }

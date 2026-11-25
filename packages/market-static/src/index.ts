@@ -1,10 +1,10 @@
 /**
- * Preisquelle aus einer lokalen JSON-Datei. Funktioniert für jeden Server:
- * Preise selbst pflegen, aus einem Export konvertieren oder per Skript erzeugen.
+ * Price source from a local JSON file. Works for any server: maintain prices
+ * by hand, convert them from an export, or generate them with a script.
  *
- * Format (Beispiel):
+ * Format (example):
  * {
- *   "source": "manuell",
+ *   "source": "manual",
  *   "channel": "auction",
  *   "asOf": "2026-11-25T00:00:00Z",
  *   "items": {
@@ -25,17 +25,17 @@ export interface StaticPriceFile {
 
 export function parsePriceFile(json: unknown): StaticPriceFile {
   const f = json as Partial<StaticPriceFile>;
-  if (typeof f !== "object" || f === null) throw new Error("Preisdatei: kein Objekt.");
+  if (typeof f !== "object" || f === null) throw new Error("Price file: not an object.");
   if (typeof f.source !== "string" || typeof f.channel !== "string" || typeof f.asOf !== "string") {
-    throw new Error("Preisdatei: source, channel und asOf sind Pflicht.");
+    throw new Error("Price file: source, channel and asOf are required.");
   }
-  if (Number.isNaN(Date.parse(f.asOf))) throw new Error("Preisdatei: asOf ist kein Datum.");
-  if (typeof f.items !== "object" || f.items === null) throw new Error("Preisdatei: items fehlt.");
+  if (Number.isNaN(Date.parse(f.asOf))) throw new Error("Price file: asOf is not a date.");
+  if (typeof f.items !== "object" || f.items === null) throw new Error("Price file: items is missing.");
   for (const [item, q] of Object.entries(f.items)) {
     for (const k of ["sell", "buy", "maxSellPerHour"] as const) {
       const v = q[k];
       if (v !== undefined && !(typeof v === "number" && Number.isFinite(v) && v >= 0)) {
-        throw new Error(`Preisdatei: ${item}.${k} muss eine Zahl >= 0 sein.`);
+        throw new Error(`Price file: ${item}.${k} must be a number >= 0.`);
       }
     }
   }
@@ -45,7 +45,7 @@ export function parsePriceFile(json: unknown): StaticPriceFile {
 export class StaticPriceSource implements PriceSource {
   readonly id: string;
   readonly #file: StaticPriceFile;
-  /** Anteil, der beim Verkauf abgezogen wird (Gebühren des Kanals) */
+  /** Share deducted when selling (channel fees) */
   readonly #feeRate: number;
 
   constructor(file: StaticPriceFile, feeRate = 0) {

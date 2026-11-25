@@ -40,8 +40,8 @@ const Store = defineComponent({
   },
 });
 
-describe("Flussmodell", () => {
-  it("findet Engpass und Füllzeit", () => {
+describe("flow model", () => {
+  it("finds the bottleneck and fill time", () => {
     const a = new Assembly("t");
     const src = a.add(Src, { rate: 200 });
     const pipe = a.add(Pipe, { max: 50 }).attach("in", src.port("out"));
@@ -53,7 +53,7 @@ describe("Flussmodell", () => {
     assert.equal(f.sinks[0]!.hoursToFull, 20);
   });
 
-  it("meldet verlorene Items", () => {
+  it("reports lost items", () => {
     const a = new Assembly("t");
     a.add(Src);
     const f = analyzeFlow(a.resolve());

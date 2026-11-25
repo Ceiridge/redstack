@@ -1,10 +1,9 @@
 /**
- * Datenmodell für die Visualisierung (Phase 4).
+ * Data model for visualisation (phase 4).
  *
- * Der Viewer selbst (3D im Browser) kommt später. Dieses Modul legt fest,
- * welche Daten er bekommt: Blöcke, Instanzen, Port-Flüsse, Engpässe und
- * Test-Ereignisse mit Ort. So können Modell und Messung im selben Bild
- * eingeblendet werden.
+ * The viewer itself (3D in the browser) comes later. This module defines the
+ * data it receives: blocks, instances, port flows, bottlenecks and test events
+ * with locations, so model and measurement can be overlaid in one picture.
  */
 
 import { type Diagnostic, type ResolvedAssembly, type Vec3, formatBlock } from "@redstack/core";
@@ -19,7 +18,7 @@ export interface VizModel {
     from: string;
     to: string;
     perHour: number;
-    /** Auslastung des Ziels, falls bekannt (>1 = Stau) */
+    /** Utilisation of the target, if known (> 1 = backed up) */
     utilization?: number;
     cells: readonly Vec3[];
   }>;

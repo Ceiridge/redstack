@@ -2,7 +2,7 @@
   "name": "redstack",
   "private": true,
   "version": "0.0.0",
-  "description": "Minecraft-Farmen und Redstone-Maschinen als Code: Komponenten, Ports, Flussmodell, Tests, Export als Schematic.",
+  "description": "Minecraft farms as code: components, ports, flow model, in-game tests, schematic export.",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
@@ -13,7 +13,9 @@
     "clean": "tsc -b --clean",
     "test": "pnpm run build && node --test \"packages/*/dist/**/*.test.js\" \"apps/*/dist/**/*.test.js\"",
     "redstack": "node apps/cli/dist/main.js",
-    "example": "pnpm run build && node apps/cli/dist/main.js all examples/dist/cactus-farm.js -o out/cactus-farm.litematic"
+    "example": "pnpm run build && node apps/cli/dist/main.js all examples/dist/cactus-farm.js -o out/cactus-farm.litematic",
+    "test:game": "node --env-file=.env apps/cli/dist/main.js test examples/dist/scenarios.js",
+    "server": "node packages/backend-fabric/scripts/server.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

@@ -1,8 +1,8 @@
 /**
- * Komponenten: wiederverwendbare Bausteine mit Blöcken, Ports und Ratenmodell.
+ * Components: reusable building blocks with blocks, ports and a rate model.
  *
- * Blöcke werden über Beziehungen platziert (above, inFrontOf, ...), nicht über
- * Koordinaten. Nur der erste Block braucht einen Ankerpunkt.
+ * Blocks are placed through relations (above, inFrontOf, ...), not
+ * coordinates. Only the first block needs an anchor.
  */
 
 import type { BlockSpec } from "./blocks.js";
@@ -18,9 +18,9 @@ import {
 } from "./geometry.js";
 
 /**
- * Port-Typen. "items" und "fluid" sind für Farmen, "signal" und "bus" für
- * Redstone-Logik (spätere CPU-Module). Neue Typen kommen hier dazu, ohne dass
- * sich der Rest ändert.
+ * Port kinds. "items" and "fluid" are for farms, "signal" and "bus" for
+ * redstone logic (future CPU modules). New kinds can be added here without
+ * touching the rest.
  */
 export type PortKind = "items" | "fluid" | "signal" | "bus";
 export type PortDirection = "in" | "out";
@@ -30,22 +30,22 @@ export interface PortDef {
   readonly direction: PortDirection;
   readonly kind: PortKind;
   /**
-   * in:  Zellen, die etwas annehmen (z. B. die Hopper eines Sammelbands).
-   * out: Zielzellen, an die etwas geliefert wird (z. B. der Block unter einem Hopper).
-   * Eine Verbindung ist geometrisch gültig, wenn alle Ziele des Ausgangs
-   * unter den Zellen des Eingangs liegen.
+   * in:  cells that accept something (e.g. the hoppers of a collection belt).
+   * out: target cells that something is delivered to (e.g. the block below a hopper).
+   * A connection is geometrically valid if all targets of the output lie on
+   * cells of the input.
    */
   readonly cells: readonly Vec3[];
-  /** Bitbreite für Bus-Ports */
+  /** Bit width of bus ports */
   readonly width?: number;
-  /** Optionaler Item-Filter, z. B. "minecraft:cactus" */
+  /** Optional item filter, e.g. "minecraft:cactus" */
   readonly item?: string;
-  /** Darf unverbunden bleiben, ohne Warnung */
+  /** May stay unconnected without a warning */
   readonly optional?: boolean;
   readonly description?: string;
 }
 
-/** Herkunft einer Zahl: wichtig, damit Modell und Messung später verglichen werden können. */
+/** Where a number comes from; needed to compare model and measurement later. */
 export type RateBasis = "game-mechanic" | "measured" | "estimate";
 
 export type RateDecl =
@@ -80,22 +80,19 @@ export type RateDecl =
       readonly note?: string;
     };
 
-/**
- * Reifegrad einer Komponente. Nur "game-tested" und höher darf als
- * funktionierend gelten.
- */
+/** Maturity of a component. Only "game-tested" and above count as working. */
 export type ComponentStatus =
-  | "draft" // nur skizziert
-  | "unverified" // vollständig, aber nie im Spiel getestet
-  | "game-tested" // automatischer Test auf Testserver grün
-  | "server-verified"; // zusätzlich auf dem Zielserver bestätigt
+  | "draft" // sketched only
+  | "unverified" // complete, never tested in-game
+  | "game-tested" // automated test on a test server passes
+  | "server-verified"; // additionally confirmed on the target server
 
 export interface PlacedBlock {
   readonly pos: Vec3;
   readonly block: BlockSpec;
 }
 
-/** Ergebnis einer gebauten Komponente in lokalen Koordinaten. */
+/** A built component in local coordinates. */
 export interface ComponentTemplate {
   readonly typeName: string;
   readonly status: ComponentStatus;
@@ -139,7 +136,7 @@ export function defineComponent<P extends Record<string, unknown>>(
   };
 }
 
-/** Handle auf einen platzierten Block innerhalb einer Komponente. */
+/** Handle to a placed block inside a component. */
 export class Placed {
   #pos: Vec3 | undefined;
   readonly block: BlockSpec;
@@ -151,7 +148,7 @@ export class Placed {
   }
 
   get pos(): Vec3 {
-    if (!this.#pos) throw new Error(`${this.#owner.name}: Block ${this.block.id} hat noch keine Position.`);
+    if (!this.#pos) throw new Error(`${this.#owner.name}: block ${this.block.id} has no position yet.`);
     return this.#pos;
   }
 
@@ -160,13 +157,13 @@ export class Placed {
   }
 
   at(pos: Vec3): this {
-    if (this.#pos) throw new Error(`${this.#owner.name}: Block ${this.block.id} ist bereits platziert.`);
+    if (this.#pos) throw new Error(`${this.#owner.name}: block ${this.block.id} is already placed.`);
     this.#pos = pos;
     this.#owner.register(this);
     return this;
   }
 
-  /** Platziert diesen Block neben `other` in Richtung `dir` (lokal). */
+  /** Places this block next to `other`, in direction `dir` (local). */
   nextTo(other: Placed, dir: RelDir | Dir): this {
     const d = isRelDir(dir) ? relToLocal(dir) : dir;
     return this.at(add(other.pos, DIR_VECTORS[d]));
@@ -194,7 +191,7 @@ export class Placed {
     return this.at(add(other.pos, offset));
   }
 
-  /** Die Nachbarzelle in einer Richtung (lokal) – z. B. Zielzelle eines Hoppers. */
+  /** The neighbouring cell in a direction (local), e.g. a hopper's target cell. */
   neighbor(dir: RelDir | Dir): Vec3 {
     const d = isRelDir(dir) ? relToLocal(dir) : dir;
     return add(this.pos, DIR_VECTORS[d]);
@@ -233,26 +230,24 @@ export class ComponentBuilder {
     this.name = name;
   }
 
-  /** Erzeugt einen Block. Position folgt über .at(...) oder eine Beziehung. */
+  /** Creates a block. Its position follows via .at(...) or a relation. */
   place(block: BlockSpec): Placed {
     const p = new Placed(this, block);
     this.#all.push(p);
     return p;
   }
 
-  /** Kurzform für den Ankerblock bei (0,0,0). */
+  /** Shorthand for the anchor block at (0,0,0). */
   origin(block: BlockSpec): Placed {
     return this.place(block).at([0, 0, 0]);
   }
 
-  /** @internal von Placed aufgerufen */
+  /** @internal called by Placed */
   register(p: Placed): void {
     const k = key(p.pos);
     const existing = this.#byKey.get(k);
     if (existing) {
-      throw new Error(
-        `${this.name}: Zelle (${k}) ist doppelt belegt: ${existing.block.id} und ${p.block.id}.`,
-      );
+      throw new Error(`${this.name}: cell (${k}) is occupied twice: ${existing.block.id} and ${p.block.id}.`);
     }
     this.#byKey.set(k, p);
     this.#placed.push(p);
@@ -287,10 +282,10 @@ export class ComponentBuilder {
   }
 
   #addPort(def: PortDef): void {
-    if (this.#ports.has(def.name)) throw new Error(`${this.name}: Port "${def.name}" existiert schon.`);
-    if (def.cells.length === 0) throw new Error(`${this.name}: Port "${def.name}" hat keine Zellen.`);
+    if (this.#ports.has(def.name)) throw new Error(`${this.name}: port "${def.name}" already exists.`);
+    if (def.cells.length === 0) throw new Error(`${this.name}: port "${def.name}" has no cells.`);
     if (def.kind === "bus" && !(def.width && def.width > 0)) {
-      throw new Error(`${this.name}: Bus-Port "${def.name}" braucht eine Breite.`);
+      throw new Error(`${this.name}: bus port "${def.name}" needs a width.`);
     }
     this.#ports.set(def.name, def);
   }
@@ -300,14 +295,14 @@ export class ComponentBuilder {
     const unplaced = this.#all.filter((p) => !p.isPositioned);
     if (unplaced.length > 0) {
       throw new Error(
-        `${this.name}: ${unplaced.length} Block/Blöcke ohne Position (${unplaced.map((p) => p.block.id).join(", ")}).`,
+        `${this.name}: ${unplaced.length} block(s) without position (${unplaced.map((p) => p.block.id).join(", ")}).`,
       );
     }
     const portNames = new Set(this.#ports.keys());
     for (const r of this.#rates) {
       const used = r.type === "passes" ? [r.from, r.to] : r.type === "consumes" ? [] : [r.port];
       for (const n of used) {
-        if (!portNames.has(n)) throw new Error(`${this.name}: Rate verweist auf unbekannten Port "${n}".`);
+        if (!portNames.has(n)) throw new Error(`${this.name}: rate refers to unknown port "${n}".`);
       }
     }
     return {

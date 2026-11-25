@@ -2,7 +2,7 @@
   "name": "@redstack/testing",
   "version": "0.0.0",
   "private": true,
-  "description": "Test-Schnittstelle: Szenarien, Backends, Berichte, Modellabgleich",
+  "description": "Test interface: scenarios, backends, reports, model comparison",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

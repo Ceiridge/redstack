@@ -13,6 +13,9 @@
     },
     {
       "path": "../packages/stdlib"
+    },
+    {
+      "path": "../packages/testing"
     }
   ]
 }

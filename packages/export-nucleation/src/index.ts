@@ -1,13 +1,13 @@
 /**
- * Adapter: ResolvedAssembly → Schematic-Datei über Nucleation.
+ * Adapter: ResolvedAssembly → schematic file via Nucleation.
  *
- * Nucleation ist eine fremde, junge Bibliothek. Sie wird ausschließlich hier
- * verwendet, damit sie austauschbar bleibt (siehe docs/ARCHITECTURE.md).
+ * Nucleation is a young third-party library. It is used only here, so it
+ * stays replaceable (see docs/ARCHITECTURE.md).
  *
- * Hinweis zur Version: Nucleation schreibt den Block-Palette-Eintrag ab
- * Datenversion 5006 (laut Nucleation: Minecraft 26.3) als {id, properties},
- * davor als {Name, Properties}. Ob Litematica auf dem Zielsystem das Format
- * liest, muss einmal im Spiel geprüft werden (docs/PLAN.md, Phase 0).
+ * Version note: from data version 5006 (Minecraft 26.3 according to
+ * Nucleation) the block palette is written as {id, properties}, before that as
+ * {Name, Properties}. Whether Litematica reads the format on the target
+ * system still has to be checked once in-game (docs/PLAN.md, phase 0).
  */
 
 import {
@@ -24,7 +24,7 @@ function b64ToBytes(b64: string): Uint8Array {
   return new Uint8Array(Buffer.from(b64, "base64"));
 }
 
-/** Datenversion, die Nucleation ohne Konvertierung schreibt. */
+/** Data version that Nucleation writes without conversion. */
 export function nativeDataVersion(): number {
   return Schematic.canonicalDataVersion();
 }
@@ -37,7 +37,7 @@ export const nucleationWriter: SchematicWriter = {
       if (options.author) s.setAuthor(options.author);
       if (options.description) s.setDescription(options.description);
       for (const b of assembly.blocks.values()) {
-        if (b.block.id === "minecraft:air") continue; // freigehaltene Zellen nicht exportieren
+        if (b.block.id === "minecraft:air") continue; // reserved cells are not exported
         s.setBlockFromString(b.pos[0], b.pos[1], b.pos[2], formatBlock(b.block));
       }
       switch (options.format) {
@@ -53,11 +53,11 @@ export const nucleationWriter: SchematicWriter = {
         }
         case "schem":
           if (options.targetDataVersion !== undefined) {
-            throw new Error("schem-Export mit Zielversion ist noch nicht angebunden.");
+            throw new Error("schem export with a target version is not wired up yet.");
           }
           return { bytes: b64ToBytes(s.toSchematicB64()), losses: [] };
         case "nbt":
-          throw new Error("Structure-Block-Export (.nbt) ist noch nicht angebunden.");
+          throw new Error("Structure block export (.nbt) is not wired up yet.");
       }
     } finally {
       s.clearContents();
@@ -75,7 +75,7 @@ export const nucleationReader: SchematicReader = {
         : format === "schem"
           ? Schematic.fromSchematic(data)
           : (() => {
-              throw new Error(`Import von ${format} noch nicht angebunden.`);
+              throw new Error(`Import of ${format} is not wired up yet.`);
             })();
     try {
       const list = JSON.parse(s.getNonAirBlocksJson()) as Array<{

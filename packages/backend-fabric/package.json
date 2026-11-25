@@ -2,7 +2,7 @@
   "name": "@redstack/backend-fabric",
   "version": "0.0.0",
   "private": true,
-  "description": "Test-Backend: Fabric + Carpet Server (Phase 3, Stub)",
+  "description": "Test backend: Fabric + Carpet server over RCON",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,6 +13,8 @@
     }
   },
   "dependencies": {
-    "@redstack/testing": "workspace:*"
+    "@redstack/testing": "workspace:*",
+    "@redstack/core": "workspace:*",
+    "@redstack/flow": "workspace:*"
   }
 }

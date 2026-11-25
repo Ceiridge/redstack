@@ -1,10 +1,10 @@
 /**
- * Flussmodell (Stufe 1): rechnet aus den Ratenangaben der Komponenten,
- * was durch eine Assembly fließt – ohne Simulation, in Millisekunden.
+ * Flow model (stage 1): computes what flows through an assembly from the
+ * components' rate declarations – no simulation, in milliseconds.
  *
- * Kann: Item-Raten pro Port, Engpässe, Füllzeiten von Lagern, benötigte Inputs,
- * verlorene Items (Ausgang ohne Abnehmer).
- * Kann nicht: Timing, Redstone-Logik, Zufallsschwankungen. Das prüfen die Tests.
+ * Covers: item rates per port, bottlenecks, storage fill times, required
+ * inputs, lost items (outputs without a receiver).
+ * Does not cover: timing, redstone logic, random variation. The tests do.
  */
 
 import type { Diagnostic, RateBasis, ResolvedAssembly } from "@redstack/core";
@@ -24,7 +24,7 @@ export interface Bottleneck {
   readonly to: string;
   readonly inflowPerHour: number;
   readonly capacityPerHour: number;
-  /** >1 bedeutet Stau */
+  /** > 1 means items back up */
   readonly utilization: number;
 }
 
@@ -40,11 +40,11 @@ export interface FlowAnalysis {
   readonly ports: ReadonlyMap<string, PortFlow>;
   readonly bottlenecks: readonly Bottleneck[];
   readonly sinks: readonly SinkStatus[];
-  /** Was die Assembly von außen braucht (z. B. Knochenmehl, Brennstoff) */
+  /** What the assembly needs from outside (e.g. bone meal, fuel) */
   readonly inputsPerHour: ItemRates;
-  /** Was in Lagern ankommt */
+  /** What arrives in storage */
   readonly storedPerHour: ItemRates;
-  /** Woher die Zahlen stammen – "estimate" heißt: nicht durch Spielmechanik oder Messung belegt */
+  /** Where the numbers come from – "estimate" means backed by neither game mechanics nor measurement */
   readonly bases: ReadonlySet<RateBasis>;
   readonly diagnostics: readonly Diagnostic[];
 }
@@ -67,7 +67,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
   const bottlenecks: Bottleneck[] = [];
   const visiting = new Set<string>();
 
-  // Verbindungen nach Ziel- und Quellport indizieren
+  // Index connections by target and source port
   const incoming = new Map<string, Array<{ instanceId: string; port: string }>>();
   const outgoingCount = new Map<string, number>();
   for (const c of a.connections) {
@@ -80,14 +80,13 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
   }
 
   const rates = (id: string) => a.instances.get(id)?.template.rates ?? [];
-  const portKind = (id: string, port: string) => a.instances.get(id)?.ports.get(port)?.kind;
 
   function outFlow(id: string, port: string): ItemRates {
     const k = portKey(id, port);
     const cached = outFlows.get(k);
     if (cached) return cached;
     if (visiting.has(k)) {
-      diagnostics.push({ severity: "error", code: "flow-cycle", message: `Zyklus im Fluss bei ${k}.`, instances: [id] });
+      diagnostics.push({ severity: "error", code: "flow-cycle", message: `Cycle in the flow at ${k}.`, instances: [id] });
       return {};
     }
     visiting.add(k);
@@ -101,25 +100,14 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
         bases.add(r.basis);
         const inflow = inFlow(id, r.from);
         const t = total(inflow);
-        const factor = t > r.maxPerHour ? r.maxPerHour / t : 1;
-        if (t > 0) {
-          const utilization = t / r.maxPerHour;
-          if (utilization > 1) {
-            bottlenecks.push({
-              instanceId: id,
-              from: r.from,
-              to: r.to,
-              inflowPerHour: t,
-              capacityPerHour: r.maxPerHour,
-              utilization,
-            });
-          }
+        if (t > r.maxPerHour) {
+          bottlenecks.push({ instanceId: id, from: r.from, to: r.to, inflowPerHour: t, capacityPerHour: r.maxPerHour, utilization: t / r.maxPerHour });
         }
-        addRates(acc, inflow, factor);
+        addRates(acc, inflow, t > r.maxPerHour ? r.maxPerHour / t : 1);
       }
     }
     visiting.delete(k);
-    // Mehrere Abnehmer: gleichmäßig aufteilen (Näherung)
+    // Several receivers: split evenly (approximation)
     const n = outgoingCount.get(k) ?? 0;
     const result = n > 1 ? Object.fromEntries(Object.entries(acc).map(([i, r]) => [i, r / n])) : acc;
     outFlows.set(k, result);
@@ -136,7 +124,6 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
     return acc;
   }
 
-  // Alle Ports durchrechnen
   for (const inst of a.instances.values()) {
     for (const p of inst.ports.values()) {
       if (p.kind !== "items" && p.kind !== "fluid") continue;
@@ -145,7 +132,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
     }
   }
 
-  // Lager, Sackgassen, verlorene Items
+  // Storage, dead ends, lost items
   const sinks: SinkStatus[] = [];
   const stored: Record<string, number> = {};
   const inputs: Record<string, number> = {};
@@ -180,7 +167,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
           diagnostics.push({
             severity: "warning",
             code: "flow-dead-end",
-            message: `${k} nimmt ${t.toFixed(1)} Items/h an, gibt sie aber nirgends weiter (keine passes/stores-Angabe).`,
+            message: `${k} accepts ${t.toFixed(1)} items/h but passes them nowhere (no passes/stores declaration).`,
             instances: [inst.id],
           });
         }
@@ -190,7 +177,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
           diagnostics.push({
             severity: "warning",
             code: "flow-spill",
-            message: `${k} gibt ${t.toFixed(1)} Items/h aus, aber nichts nimmt sie an. Die Items gehen verloren.`,
+            message: `${k} outputs ${t.toFixed(1)} items/h but nothing receives them. They are lost.`,
             instances: [inst.id],
           });
         }
@@ -200,45 +187,36 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
 
   const ports = new Map<string, PortFlow>();
   for (const [k, items] of [...outFlows, ...inFlows]) {
-    const [instanceId, port] = [k.slice(0, k.lastIndexOf(".")), k.slice(k.lastIndexOf(".") + 1)];
-    if (portKind(instanceId, port) === undefined) continue;
-    ports.set(k, { instanceId, port, items, totalPerHour: total(items) });
+    const i = k.lastIndexOf(".");
+    ports.set(k, { instanceId: k.slice(0, i), port: k.slice(i + 1), items, totalPerHour: total(items) });
   }
 
   if (bases.has("estimate")) {
     diagnostics.push({
       severity: "info",
       code: "flow-estimate",
-      message: "Mindestens eine Rate ist eine Schätzung. Ergebnis erst nach Messung belastbar.",
+      message: "At least one rate is an estimate. Treat the result as provisional until measured.",
     });
   }
 
-  return {
-    ports,
-    bottlenecks,
-    sinks,
-    inputsPerHour: inputs,
-    storedPerHour: stored,
-    bases,
-    diagnostics,
-  };
+  return { ports, bottlenecks, sinks, inputsPerHour: inputs, storedPerHour: stored, bases, diagnostics };
 }
 
-/** Kompakter Textbericht, z. B. für die CLI oder als Kontext für die KI. */
+/** Compact text report, e.g. for the CLI or as context for an AI. */
 export function formatFlowReport(f: FlowAnalysis): string {
   const lines: string[] = [];
-  const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("de-DE", { maximumFractionDigits: 1 }) : "∞");
-  lines.push("Ertrag (in Lagern):");
-  for (const [item, r] of Object.entries(f.storedPerHour)) lines.push(`  ${item}: ${fmt(r)} /h`);
+  const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US", { maximumFractionDigits: 1 }) : "∞");
+  lines.push("Yield (into storage):");
+  for (const [item, r] of Object.entries(f.storedPerHour)) lines.push(`  ${item}: ${fmt(r)}/h`);
   if (Object.keys(f.inputsPerHour).length) {
-    lines.push("Benötigte Inputs:");
-    for (const [item, r] of Object.entries(f.inputsPerHour)) lines.push(`  ${item}: ${fmt(r)} /h`);
+    lines.push("Required inputs:");
+    for (const [item, r] of Object.entries(f.inputsPerHour)) lines.push(`  ${item}: ${fmt(r)}/h`);
   }
-  lines.push(f.bottlenecks.length ? "Engpässe:" : "Engpässe: keine");
+  lines.push(f.bottlenecks.length ? "Bottlenecks:" : "Bottlenecks: none");
   for (const b of f.bottlenecks) {
-    lines.push(`  ${b.instanceId} ${b.from}→${b.to}: ${fmt(b.inflowPerHour)} /h rein, max ${fmt(b.capacityPerHour)} /h (${fmt(b.utilization * 100)} %)`);
+    lines.push(`  ${b.instanceId} ${b.from}→${b.to}: ${fmt(b.inflowPerHour)}/h in, max ${fmt(b.capacityPerHour)}/h (${fmt(b.utilization * 100)}%)`);
   }
-  lines.push("Lager:");
-  for (const s of f.sinks) lines.push(`  ${s.instanceId}: ${fmt(s.inflowPerHour)} /h, voll nach ${fmt(s.hoursToFull)} h`);
+  lines.push("Storage:");
+  for (const s of f.sinks) lines.push(`  ${s.instanceId}: ${fmt(s.inflowPerHour)}/h, full after ${fmt(s.hoursToFull)} h`);
   return lines.join("\n");
 }

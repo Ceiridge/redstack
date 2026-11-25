@@ -2,7 +2,7 @@
   "name": "@redstack/cli",
   "version": "0.0.0",
   "private": true,
-  "description": "Kommandozeile: check, flow, build",
+  "description": "Command line: check, flow, build, all, test",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,6 +16,8 @@
     "@redstack/core": "workspace:*",
     "@redstack/flow": "workspace:*",
     "@redstack/export-nucleation": "workspace:*",
-    "@redstack/viz": "workspace:*"
+    "@redstack/viz": "workspace:*",
+    "@redstack/testing": "workspace:*",
+    "@redstack/backend-fabric": "workspace:*"
   }
 }

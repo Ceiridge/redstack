@@ -1,5 +1,5 @@
 /**
- * Statische Prüfungen (Stufe 0). Laufen in Millisekunden, vor jeder Simulation.
+ * Static checks (stage 0). Run in milliseconds, before any simulation.
  */
 
 import type { ResolvedAssembly } from "./assembly.js";
@@ -11,7 +11,7 @@ export function runChecks(a: ResolvedAssembly): Diagnostic[] {
   return [...a.diagnostics, ...checkConnections(a), ...checkUnconnected(a), ...checkCrosstalk(a)];
 }
 
-/** Verbindungen: Richtung, Typ, Bus-Breite und Geometrie müssen passen. */
+/** Connections: direction, kind, bus width and geometry must match. */
 export function checkConnections(a: ResolvedAssembly): Diagnostic[] {
   const out: Diagnostic[] = [];
   for (const c of a.connections) {
@@ -19,32 +19,20 @@ export function checkConnections(a: ResolvedAssembly): Diagnostic[] {
     const to = a.instances.get(c.to.instanceId)?.ports.get(c.to.port);
     const label = `${c.from.instanceId}.${c.from.port} → ${c.to.instanceId}.${c.to.port}`;
     if (!from || !to) {
-      out.push({ severity: "error", code: "unknown-port", message: `Verbindung ${label}: Port fehlt.` });
+      out.push({ severity: "error", code: "unknown-port", message: `Connection ${label}: port missing.` });
       continue;
     }
     if (from.direction !== "out" || to.direction !== "in") {
-      out.push({ severity: "error", code: "port-direction", message: `Verbindung ${label}: muss von out nach in gehen.` });
+      out.push({ severity: "error", code: "port-direction", message: `Connection ${label}: must go from out to in.` });
     }
     if (from.kind !== to.kind) {
-      out.push({
-        severity: "error",
-        code: "port-kind",
-        message: `Verbindung ${label}: Typ ${from.kind} passt nicht zu ${to.kind}.`,
-      });
+      out.push({ severity: "error", code: "port-kind", message: `Connection ${label}: kind ${from.kind} does not match ${to.kind}.` });
     }
     if (from.kind === "bus" && from.width !== to.width) {
-      out.push({
-        severity: "error",
-        code: "bus-width",
-        message: `Verbindung ${label}: Busbreite ${from.width} ≠ ${to.width}.`,
-      });
+      out.push({ severity: "error", code: "bus-width", message: `Connection ${label}: bus width ${from.width} ≠ ${to.width}.` });
     }
     if (from.item && to.item && from.item !== to.item) {
-      out.push({
-        severity: "error",
-        code: "item-filter",
-        message: `Verbindung ${label}: liefert ${from.item}, erwartet ${to.item}.`,
-      });
+      out.push({ severity: "error", code: "item-filter", message: `Connection ${label}: delivers ${from.item}, expects ${to.item}.` });
     }
     const accept = new Set(to.absCells.map(key));
     for (const t of from.absCells) {
@@ -52,7 +40,7 @@ export function checkConnections(a: ResolvedAssembly): Diagnostic[] {
         out.push({
           severity: "error",
           code: "port-misaligned",
-          message: `Verbindung ${label}: Zielzelle (${t.join(",")}) liegt nicht auf dem Eingang.`,
+          message: `Connection ${label}: target cell (${t.join(",")}) is not on the input.`,
           at: t,
           instances: [c.from.instanceId, c.to.instanceId],
         });
@@ -75,7 +63,7 @@ export function checkUnconnected(a: ResolvedAssembly): Diagnostic[] {
         out.push({
           severity: "warning",
           code: "unconnected-port",
-          message: `${inst.id}.${p.name} (${p.direction}, ${p.kind}) ist nicht verbunden.`,
+          message: `${inst.id}.${p.name} (${p.direction}, ${p.kind}) is not connected.`,
           instances: [inst.id],
         });
       }
@@ -85,10 +73,10 @@ export function checkUnconnected(a: ResolvedAssembly): Diagnostic[] {
 }
 
 /**
- * Heuristik gegen Übersprechen: Redstone-relevante Blöcke verschiedener
- * Instanzen, die direkt nebeneinanderliegen. Erzeugt Warnungen, keine Fehler,
- * weil nicht jede Nachbarschaft ein Problem ist. Quasi-Connectivity und
- * Update-Ketten über mehrere Blöcke erkennt das nicht – dafür sind die Tests da.
+ * Crosstalk heuristic: redstone-relevant blocks of different instances that
+ * touch each other. Warnings, not errors, since not every contact is a
+ * problem. Quasi-connectivity and update chains across several blocks are not
+ * detected – that is what the tests are for.
  */
 export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
   const out: Diagnostic[] = [];
@@ -101,12 +89,12 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
       const pair = [key(b.pos), key(n.pos)].sort().join("|");
       if (seen.has(pair)) continue;
       seen.add(pair);
-      // Hopper → Hopper zwischen verbundenen Komponenten ist der Normalfall
+      // hopper next to hopper across connected components is the normal case
       if (b.block.id === "minecraft:hopper" && n.block.id === "minecraft:hopper") continue;
       out.push({
         severity: "warning",
         code: "possible-crosstalk",
-        message: `${b.instanceId} (${b.block.id}) grenzt an ${n.instanceId} (${n.block.id}). Mögliches Übersprechen prüfen.`,
+        message: `${b.instanceId} (${b.block.id}) touches ${n.instanceId} (${n.block.id}). Check for crosstalk.`,
         at: b.pos,
         instances: [b.instanceId, n.instanceId],
       });

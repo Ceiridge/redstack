@@ -1,55 +1,73 @@
 # redstack
 
-Minecraft-Farmen als Code: Komponenten mit Ports, statische Prüfung, Flussmodell, Wirtschaftsbewertung, Tests und Export als Schematic.
+Minecraft farms as code: components with ports, static checks, a flow model, economic evaluation, in-game tests on a real server, and schematic export.
 
-> Arbeitstitel. Privates Projekt. Stand: Grundgerüst (siehe `docs/PLAN.md`).
+> Working title. Private project. Status: see [docs/PLAN.md](docs/PLAN.md).
 
 ```ts
-const farm = new Assembly("Kaktusfarm");
-const row  = farm.row(CactusCell, 16, steps("forward", 2));
-const belt = farm.add(HopperLine, { length: 31 }).attach("in", row[0]!.port("drops"));
+const farm = new Assembly("cactus-farm");
+const row  = farm.row(CactusCell, 16, steps("forward", 3));
+const belt = farm.add(HopperLine, { length: 46 }).attach("in", row[0]!.port("drops"));
 for (const cell of row.slice(1)) farm.connect(cell.port("drops"), belt.port("in"));
 farm.add(Chest).attach("in", belt.port("out"));
 ```
 
 ```
 $ pnpm example
-Kaktusfarm-16: 18 Instanzen, 160 Zellen
-Ertrag (in Lagern):
-  minecraft:cactus: 52,7 /h
-Engpässe: keine
-Lager:
-  Chest#1: 52,7 /h, voll nach 32,8 h
-Geschrieben: out/cactus-farm.litematic
+cactus-farm-16: 18 instances, 335 cells
+No findings.
+Yield (into storage):
+  minecraft:cactus: 44.8/h
+Bottlenecks: none
+Storage:
+  Chest#1: 44.8/h, full after 38.6 h
+Written: out/cactus-farm.litematic
+
+$ pnpm test:game cactus-farm-16
+PASS cactus-farm-16 (fabric-carpet, 1 run(s))
+  measured minecraft:cactus: 45/h
+  ok   matches-flow-model: Measurement matches the model.
+  ok   no-ground-items: No items on the ground.
+  ok   no-stuck-hoppers: No hoppers backed up.
 ```
 
-## Start
+## Getting started
 
-Voraussetzungen: Node ≥ 22.18, pnpm 10 (`corepack enable`).
+Requirements: Node ≥ 22.18, pnpm 10 (`corepack enable`).
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm test
-pnpm example
+pnpm test        # build + unit tests
+pnpm example     # checks, flow model and export for the example farm
 ```
 
-## Module
+In-game tests need a local test server: see [packages/backend-fabric/README.md](packages/backend-fabric/README.md).
 
-| Paket | Zweck |
+## Packages
+
+| Package | Purpose |
 |---|---|
-| `core` | Geometrie, Blöcke, Komponenten, Ports, Assemblies, statische Checks |
-| `flow` | Flussmodell: Raten, Engpässe, Füllzeiten |
-| `export-nucleation` | Schematic-Export (Adapter für Nucleation) |
-| `stdlib` | Komponenten (alle noch `unverified`) |
-| `economy` | Prozesse, Standorte/AFK-Spots, Märkte, Plan-Bewertung |
-| `market-static` | Preise aus JSON-Datei, für jeden SMP |
-| `market-donut` | DonutSMP-Profil |
-| `testing` | Szenarien, Backends, Berichte, Modellabgleich |
-| `backend-fabric` | Fabric + Carpet Testserver (Phase 3, Stub) |
-| `viz` | Datenmodell für den Viewer (Phase 4) |
-| `apps/cli` | `redstack check/flow/build/all` |
+| `core` | Geometry, blocks, components, ports, assemblies, static checks |
+| `flow` | Flow model: rates, bottlenecks, fill times |
+| `export-nucleation` | Schematic export (adapter for Nucleation) |
+| `stdlib` | Components |
+| `economy` | Processes, sites/AFK spots, markets, plan evaluation |
+| `market-static` | Prices from a JSON file, for any SMP |
+| `market-donut` | DonutSMP profile |
+| `testing` | Scenarios, backends, reports, model comparison |
+| `backend-fabric` | Fabric + Carpet test server over RCON |
+| `viz` | Data model for the viewer (phase 4) |
+| `apps/cli` | `redstack check/flow/build/all/test` |
 
-Mehr: `docs/ARCHITECTURE.md`, `docs/PLAN.md`, `docs/SECURITY.md`.
+## Component status
 
-## Wichtig
-Keine Komponente ist bisher im Spiel getestet. Ein fehlerfreier `check` heißt: geometrisch konsistent, nicht: funktioniert.
+| Component | Status | Evidence |
+|---|---|---|
+| `HopperLine` | game-tested | 9,000 items/h measured = model |
+| `Chest` | game-tested | used as storage in all scenarios |
+| `SupplyChest` | game-tested | test fixture |
+| `CactusCell` | game-tested | survival measured per breaker, see [docs/experiments/cactus.md](docs/experiments/cactus.md) |
+
+"game-tested" means: passes on the Fabric test server (Minecraft 26.3). Not yet confirmed on a production server, and the `.litematic` files have not been loaded in Litematica yet.
+
+More: [ARCHITECTURE](docs/ARCHITECTURE.md), [PLAN](docs/PLAN.md), [SECURITY](docs/SECURITY.md).

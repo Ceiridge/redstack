@@ -1,106 +1,109 @@
 # Plan
 
-Ziel: Minecraft-Farmen (später auch Redstone-Logik bis hin zu CPUs) als Code beschreiben, automatisch prüfen und testen, als Schematic exportieren – so, dass eine KI zuverlässig neue Farmen zusammensetzen, verbessern und wirtschaftlich bewerten kann.
+Goal: describe Minecraft farms (later also redstone logic, up to CPUs) as code, check and test them automatically, and export them as schematics – so that an AI can reliably compose, improve and economically evaluate farms.
 
-Leitidee: **Ein Graph, drei Auflösungen.**
+Guiding idea: **one graph, three resolutions.**
 
-| Ebene | Frage | Werkzeug |
+| Level | Question | Tooling |
 |---|---|---|
-| Wirtschaft | Was lohnt sich wo? | `economy` + Markt-Module |
-| Bauplan | Wie fließen Items durch die Farm? | `core` + `flow` |
-| Messung | Stimmt das im Spiel? | `testing` + Backends |
+| Economy | What is worth building where? | `economy` + market modules |
+| Design | How do items flow through the farm? | `core` + `flow` |
+| Measurement | Does it hold in-game? | `testing` + backends |
 
-Jede Ebene kontrolliert die nächste: Messungen prüfen das Ratenmodell der Komponenten, geprüfte Ratenmodelle machen die Wirtschaftsrechnung belastbar.
+Each level checks the next: measurements calibrate the components' rate models, calibrated rate models make the economic numbers trustworthy.
 
-## Prüfstufen
+## Verification stages
 
-| Stufe | Was | Dauer | Paket |
+| Stage | What | Time | Package |
 |---|---|---|---|
-| 0 | Statische Checks: Überlappung, freigehaltene Zellen, Port-Passung, Typen, Übersprechen | ms | `core` |
-| 1 | Flussmodell: Raten, Engpässe, Inputs, Füllzeiten | ms | `flow` |
-| 2 | Komponententest auf Backend | Sekunden | `testing` + Backend |
-| 3 | Ganze Assembly, mehrere Läufe, Statistik | Minuten | `testing` + Backend |
+| 0 | Static checks: overlap, reserved cells, port alignment, kinds, crosstalk | ms | `core` |
+| 1 | Flow model: rates, bottlenecks, inputs, fill times | ms | `flow` |
+| 2 | Component test on a backend | seconds | `testing` + backend |
+| 3 | Whole assembly, several runs, statistics | minutes | `testing` + backend |
 
-## Phasen
+## Phases
 
-Jede Phase hat ein Abschlusskriterium. Erst wenn es erfüllt ist, gilt die Phase als fertig.
+Each phase has an exit criterion. A phase is done when it is met.
 
-### Phase 0 – Nucleation prüfen ✅ (bis auf Spieltest)
-- [x] `.litematic` per npm schreiben, Block-States und Drehungen per Roundtrip prüfen
-- [x] Unabhängige Gegenprüfung mit litemapy (älteres Format, Datenversion 4903): alle Blöcke identisch
-- [ ] **Offen: im Spiel prüfen.** `out/cactus-farm.litematic` in Litematica (26.3) laden. Nucleation schreibt ab Datenversion 5006 die Palette als `{id, properties}` statt `{Name, Properties}` – laut Nucleation ist das das neue Format von 26.3. Nicht unabhängig bestätigt.
+### Phase 0 – Evaluate Nucleation ✅ (except one in-game check)
+- [x] Write `.litematic` via npm, check block states and rotations by round trip
+- [x] Independent cross-check with litemapy (older format, data version 4903): all blocks identical
+- [ ] **Open: load a file in Litematica 26.3.** From data version 5006 Nucleation writes the palette as `{id, properties}` instead of `{Name, Properties}`; according to Nucleation this is the 26.3 format. Not independently confirmed. Needs a game client.
 
-**Ergebnis:** Nucleation wird genutzt, nur hinter `export-nucleation`.
+### Phase 1 – Core ✅
+- [x] Geometry with relative directions and rotation
+- [x] Block states with semantic helpers and rotation of all direction-dependent properties
+- [x] Components placed by relations, typed ports (items, fluid, signal, bus), reserved cells
+- [x] Assemblies: docking via ports (`attach`), rows, connections
+- [x] Static checks
+- [ ] Mirroring components
+- [ ] Importing proven schematics as components (the reader exists)
 
-### Phase 1 – Kern ✅ (Grundgerüst)
-- [x] Geometrie mit relativen Richtungen und Drehung
-- [x] Block-States mit semantischen Helfern (`outputTo`, `signalTowards`, `watching`, `pushing`) und Drehung aller richtungsabhängigen Properties
-- [x] Komponenten mit Beziehungen statt Koordinaten, typisierte Ports (items, fluid, signal, bus)
-- [x] Assemblies: andocken über Ports (`attach`), Reihen (`row`), Verbindungen
-- [x] Statische Checks
-- [ ] Spiegeln (mirror) von Komponenten
-- [ ] Mehrdeutige Beziehungen ohne Richtung (z. B. „neben“) mit Fehlermeldung
-- [ ] Import erprobter Schematics als Komponente (Reader ist vorhanden)
+### Phase 2 – Flow model ✅
+- [x] Rates per port, bottlenecks, fill times, inputs, lost items, dead ends
+- [x] Origin of every number (`game-mechanic` / `measured` / `estimate`)
+- [ ] Distributions instead of means (for random mechanics)
+- [ ] Fuel/energy as separate flows
 
-**Abschluss:** Eine Farm aus drei Komponenten wird ohne eine einzige Koordinate (außer dem Anker) beschrieben, geprüft und exportiert. ✅ siehe `examples/`
+### Phase 2b – Economy
+- [x] Processes, sites (AFK spots), accounts, mob cap sharing, market limits, plan evaluation
+- [x] Market interface, static price source (any SMP), Donut module
+- [ ] Optimizer: mixed-integer linear programming. Pick the solver after a security review
+- [ ] Bridge: assembly + flow model → `Process` automatically
+- [ ] Donut: converter for the published donutflipper price history (check licence)
+- [ ] Simulation distance: processes at one site must be loaded together
 
-### Phase 2 – Flussmodell ✅ (Grundgerüst)
-- [x] Raten pro Port, Engpässe, Füllzeiten, Inputs, verlorene Items, Sackgassen
-- [x] Herkunft jeder Zahl (`game-mechanic` / `measured` / `estimate`)
-- [ ] Verteilungen statt Mittelwerte (für Zufallsmechaniken)
-- [ ] Brennstoff/Energie als eigene Flüsse
+**Exit:** for a price list the optimizer proposes a plan that respects account and mob cap limits.
 
-### Phase 2b – Wirtschaft
-- [x] Prozesse, Standorte (AFK-Spots), Accounts, Mob-Cap-Konkurrenz, Absatzgrenzen, Plan-Bewertung
-- [x] Markt-Schnittstelle, statische Preisquelle (jeder SMP), Donut-Modul
-- [ ] Optimierer: gemischt-ganzzahlige lineare Optimierung (Anzahl je Prozess und Standort). Solver-Auswahl nach Sicherheitsprüfung (siehe SECURITY.md)
-- [ ] Brücke: Assembly + Flussmodell → `Process` automatisch
-- [ ] Donut: Konverter für die veröffentlichte donutflipper-Preishistorie (Lizenz prüfen)
-- [ ] Simulationsradius: Prozesse an einem Standort müssen gemeinsam geladen sein
+### Phase 3 – Test environments ✅ (first backend)
+- [x] Fabric + Carpet server, pinned and checksum-verified, set up by script (`pnpm server setup`)
+- [x] RCON control, frozen game + `tick sprint`, sampling against actual game time
+- [x] Carpet fake player for random ticks, catch floor for lost items, backed-up hopper detection
+- [x] `redstack test`, JSON reports, comparison against the flow model
+- [x] First components game-tested: HopperLine, Chest, SupplyChest, CactusCell
+- [ ] Use the vanilla GameTest framework for component tests
+- [ ] Several server processes in parallel; container without network for the server
+- [ ] Chunk reload and server restart as test actions
+- [ ] Backend for pure redstone logic (Nucleation simulation built from the submodule)
+- [ ] Paper backend with server profiles
 
-**Abschluss:** Für eine Preisliste schlägt der Optimierer einen Plan vor, der die Account- und Mob-Cap-Grenzen einhält.
+**Exit reached:** a component test runs with one command, produces JSON and fails when the measurement deviates from the flow model.
 
-### Phase 3 – Testumgebungen (auf deinem PC, Claude Code)
-- [ ] Backend „fabric-carpet“: Server-Dateien per Manifest mit SHA-256, Container ohne Netz, RCON-Steuerung
-- [ ] Pro Szenario eine Void-Dimension, Fake-Player am AFK-Spot, Hopper-Counter, `/tick sprint`
-- [ ] Komponententests über das GameTest-Framework (seit 1.21.5 in Vanilla)
-- [ ] Ereignisse mit Ort: verstopfte Hopper, Items am Boden, zerstörte Items
-- [ ] Mehrere Serverprozesse parallel
-- [ ] Backend „nucleation-redstone“ für reine Logik (Simulation aus dem Submodule bauen)
-- [ ] Später: Backend „paper“ mit Server-Profilen
+### Phase 4 – Visualisation
+- [x] Data model (`viz`): blocks, instances, flows, utilisation, highlighted spots
+- [ ] 3D viewer in the browser (candidates: Nucleation renderer, deepslate-based renderers – review first)
+- [ ] Overlays: flow strength, bottlenecks in red, events from tests, comparison of two runs
 
-**Abschluss:** Der Test einer Komponente läuft per Befehl automatisch durch, liefert JSON und schlägt fehl, wenn die Messung vom Flussmodell abweicht.
+**Exit:** on a deliberately broken farm, the fault is visible immediately in the viewer.
 
-### Phase 4 – Visualisierung
-- [x] Datenmodell (`viz`): Blöcke, Instanzen, Flüsse, Auslastung, markierte Stellen
-- [ ] 3D-Viewer im Browser (Kandidaten: Nucleation-Renderer, deepslate-basierte Renderer – vorher prüfen)
-- [ ] Einblendungen: Flussstärke, Engpässe rot, Ereignisse aus Tests, Vergleich zweier Läufe
+### Phase 5 – Standard library and AI loop
+- [ ] 10–20 proven components (rebuilt from archives, respecting licences and credits), each with a test and docs
+- [ ] Component docs written for AIs too: ports, rates, limits, known traps
+- [ ] Loop: write → stage 0 → stage 1 → test → repair
 
-**Abschluss:** Bei einer absichtlich kaputten Farm ist die Fehlerstelle im Viewer sofort sichtbar.
+**Exit:** an AI composes a new farm variant from the library that passes all tests without human intervention.
 
-### Phase 5 – Standardbibliothek und KI-Schleife
-- [ ] 10–20 erprobte Komponenten (aus Archiven nachgebaut, Lizenz und Urheber beachten), jede mit Test und Doku
-- [ ] Komponenten-Doku auch für die KI geschrieben: Ports, Raten, Grenzen, bekannte Fallen
-- [ ] Schleife: schreiben → Stufe 0 → Stufe 1 → Test → reparieren
+### Phase 6 – Discovery
+- [ ] Parameter search over variants (flow model pre-filters, the test server scores)
+- [ ] Mechanism catalogue: ways the game produces items, with references to the (unobfuscated since 26.1) source code
+- [ ] Experiment mode: small isolated tests of single mechanics (see `docs/experiments/`)
+- [ ] Exploit/dupe flagging, excluded by default
 
-**Abschluss:** Die KI setzt aus der Bibliothek eine neue Farm-Variante zusammen, die alle Tests besteht, ohne menschlichen Eingriff.
+**Realistic expectation:** improvements and new combinations yes, fundamentally new mechanics rarely.
 
-### Phase 6 – Entdeckung
-- [ ] Parametersuche über Varianten (Flussmodell siebt vor, Testserver bewertet)
-- [ ] Mechanismen-Katalog: Wege, wie das Spiel Items erzeugt, mit Verweis auf den (seit 26.1 unverschleierten) Quellcode
-- [ ] Experiment-Modus: kleine isolierte Tests einzelner Mechaniken
-- [ ] Exploit-/Dupe-Kennzeichnung, standardmäßig ausgeschlossen
+### Phase 7 – Redstone logic (future)
+- [ ] Package `logic`: gates, registers, buses on top of `signal`/`bus` ports
+- [ ] Timing model (redstone ticks) as the counterpart of the flow model
+- [ ] Verilog import via Yosys instead of own logic synthesis
+- [ ] Simulation via Nucleation/redpiler
 
-**Realistische Erwartung:** Verbesserungen und neue Kombinationen ja, grundlegend neue Mechaniken selten.
+## Open decisions
+- Project name (working title "redstack")
+- Which version does the target server run? Mechanics can differ between versions.
+- Viewer technology (phase 4)
+- LP solver (phase 2b)
 
-### Phase 7 – Redstone-Logik (Zukunft)
-- [ ] Paket `logic`: Gatter, Register, Busse auf Basis der `signal`/`bus`-Ports
-- [ ] Timing-Modell (Redstone-Ticks) als Gegenstück zum Flussmodell
-- [ ] Import aus Verilog über Yosys statt eigener Logiksynthese
-- [ ] Simulation über Nucleation/Redpiler
-
-## Offene Entscheidungen
-- Projektname (Arbeitstitel „redstack“)
-- Auf welcher Version läuft der Zielserver? Mechaniken können sich zwischen Versionen unterscheiden.
-- Viewer-Technik (Phase 4)
-- LP-Solver (Phase 2b)
+## Next steps
+1. Litematica load test (needs a PC)
+2. Bridge assembly → process, then the optimizer (phase 2b)
+3. More components with tests (phase 5), starting with water-based collection

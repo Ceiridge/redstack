@@ -2,7 +2,7 @@
   "name": "@redstack/market-donut",
   "version": "0.0.0",
   "private": true,
-  "description": "DonutSMP-Profil (Handelskanäle, Datenimport)",
+  "description": "DonutSMP profile (sales channels, data import)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

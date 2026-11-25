@@ -2,7 +2,7 @@ import type { Vec3 } from "./geometry.js";
 
 export type Severity = "error" | "warning" | "info";
 
-/** Maschinenlesbare Meldung. Wichtig für die KI-Schleife: genau, mit Ort und Beteiligten. */
+/** Machine-readable finding. Important for the AI loop: precise, with location and the parties involved. */
 export interface Diagnostic {
   readonly severity: Severity;
   readonly code: string;

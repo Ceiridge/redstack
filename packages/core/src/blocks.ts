@@ -1,15 +1,14 @@
 /**
- * Block-States mit semantischen Helfern.
+ * Block states with semantic helpers.
  *
- * Grundregel: In Komponenten werden Richtungen immer im lokalen Rahmen der
- * Komponente angegeben (forward/back/left/right/up/down oder lokale
- * Himmelsrichtungen). Beim Platzieren wird alles mitgedreht: facing, axis,
- * Verbindungs-Properties (north/east/...) und rotation (0–15).
+ * Rule: inside components, directions are always given in the component's
+ * local frame (forward/back/left/right/up/down, or local compass directions).
+ * When a component is placed rotated, everything turns with it: facing, axis,
+ * connection properties (north/east/...) and rotation (0–15).
  *
- * Die semantischen Helfer (outputTo, signalTowards, ...) kapseln die
- * Fallstricke der Block-States, z. B. dass bei Repeatern "facing" zur
- * Eingangsseite zeigt. Jede dieser Annahmen muss durch einen Komponenten-Test
- * im echten Spiel abgesichert werden (Phase 3).
+ * The semantic helpers (outputTo, signalTowards, ...) hide block-state traps,
+ * e.g. that a repeater's "facing" points at its input side. Each of these
+ * assumptions has to be covered by an in-game component test.
  */
 
 import {
@@ -33,17 +32,17 @@ export interface BlockSpec {
 const DIRECTIONAL_VALUE_PROPS = new Set(["facing", "horizontal_facing"]);
 const CONNECTION_PROPS: readonly string[] = ["north", "east", "south", "west"];
 
-function ns(id: string): string {
+function namespaced(id: string): string {
   return id.includes(":") ? id : `minecraft:${id}`;
 }
 
-/** Fluent-Builder für einen Block. Unveränderlich: jede Methode liefert einen neuen Builder. */
+/** Fluent, immutable block builder: every method returns a new builder. */
 export class Block implements BlockSpec {
   readonly id: string;
   readonly props: Readonly<Record<string, PropValue>>;
 
   constructor(id: string, props: Record<string, PropValue> = {}) {
-    this.id = ns(id);
+    this.id = namespaced(id);
     this.props = props;
   }
 
@@ -51,36 +50,36 @@ export class Block implements BlockSpec {
     return new Block(this.id, { ...this.props, ...props });
   }
 
-  /** Setzt "facing" direkt (lokale Richtung). Für Blöcke ohne Sonderlogik. */
+  /** Sets "facing" directly (local direction). For blocks without special semantics. */
   facing(dir: RelDir | Dir): Block {
     return this.with({ facing: toLocalDir(dir) });
   }
 
-  /** Hopper, Dropper, Dispenser: Items gehen in diese Richtung hinaus. */
+  /** Hopper, dropper, dispenser: items leave in this direction. */
   outputTo(dir: RelDir | Dir): Block {
     const d = toLocalDir(dir);
     if (this.id === "minecraft:hopper" && d === "up") {
-      throw new Error("Hopper können nicht nach oben ausgeben.");
+      throw new Error("Hoppers cannot output upwards.");
     }
     return this.with({ facing: d });
   }
 
   /**
-   * Repeater/Comparator: Das Signal läuft in diese Richtung.
-   * Im Block-State zeigt "facing" zur Eingangsseite, also zur Gegenrichtung.
+   * Repeater/comparator: the signal travels in this direction.
+   * In the block state, "facing" points at the input side, i.e. the opposite.
    */
   signalTowards(dir: RelDir | Dir): Block {
     const d = toLocalDir(dir);
-    if (d === "up" || d === "down") throw new Error("Repeater/Comparator sind nur horizontal.");
+    if (d === "up" || d === "down") throw new Error("Repeaters and comparators are horizontal only.");
     return this.with({ facing: OPPOSITE[d] });
   }
 
-  /** Observer: beobachtet den Block in dieser Richtung, Ausgang auf der Rückseite. */
+  /** Observer: watches the block in this direction, outputs at its back. */
   watching(dir: RelDir | Dir): Block {
     return this.with({ facing: toLocalDir(dir) });
   }
 
-  /** Piston/Sticky Piston: schiebt in diese Richtung. */
+  /** Piston/sticky piston: pushes in this direction. */
   pushing(dir: RelDir | Dir): Block {
     return this.with({ facing: toLocalDir(dir) });
   }
@@ -98,7 +97,7 @@ export function block(id: string, props: Record<string, PropValue> = {}): Block 
   return new Block(id, props);
 }
 
-/** Häufige Blöcke als Kurzformen. Liste wächst mit der Standardbibliothek. */
+/** Common blocks. The list grows with the standard library. */
 export const B = {
   air: () => block("air"),
   stone: () => block("stone"),
@@ -119,11 +118,11 @@ export const B = {
     block("oak_fence", { north: false, east: false, south: false, west: false, waterlogged: false }),
 } as const;
 
-/** Dreht alle richtungsabhängigen Properties eines Blocks. */
+/** Rotates all direction-dependent properties of a block. */
 export function rotateBlock(spec: BlockSpec, rot: Rotation): BlockSpec {
   if (rot === 0) return spec;
   const out: Record<string, PropValue> = {};
-  // Verbindungs-Properties (Zäune, Redstone, Glasscheiben) werden permutiert
+  // Connection properties (fences, redstone, panes) are permuted
   const conn: Partial<Record<Dir, PropValue>> = {};
   for (const [k, v] of Object.entries(spec.props)) {
     if (CONNECTION_PROPS.includes(k)) {
@@ -142,14 +141,14 @@ export function rotateBlock(spec: BlockSpec, rot: Rotation): BlockSpec {
   return { id: spec.id, props: out };
 }
 
-/** Kanonische Schreibweise: minecraft:hopper[enabled=true,facing=down] (Properties sortiert). */
+/** Canonical block string: minecraft:hopper[enabled=true,facing=down] (properties sorted). */
 export function formatBlock(spec: BlockSpec): string {
   const entries = Object.entries(spec.props).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) return spec.id;
   return `${spec.id}[${entries.map(([k, v]) => `${k}=${String(v)}`).join(",")}]`;
 }
 
-/** Blöcke, die Redstone-Signale erzeugen, leiten oder darauf reagieren (für die Übersprech-Prüfung). */
+/** Blocks that emit, carry or react to redstone signals (used by the crosstalk check). */
 export const REDSTONE_RELEVANT = new Set(
   [
     "redstone_wire",
@@ -177,5 +176,5 @@ export const REDSTONE_RELEVANT = new Set(
     "powered_rail",
     "activator_rail",
     "detector_rail",
-  ].map(ns),
+  ].map(namespaced),
 );

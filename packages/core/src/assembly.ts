@@ -1,9 +1,9 @@
 /**
- * Assemblies: Komponenten zu Farmen (oder Maschinen) zusammensetzen.
+ * Assemblies: composing components into farms (or machines).
  *
- * Instanzen werden über Ports angedockt (attach), nicht über Koordinaten.
- * Nur eine Instanz braucht einen Ankerpunkt; die erste wird sonst bei (0,0,0)
- * verankert.
+ * Instances dock onto each other through ports (attach), not coordinates.
+ * Only one instance needs an anchor; otherwise the first one is anchored at
+ * (0,0,0).
  */
 
 import { type BlockSpec, rotateBlock } from "./blocks.js";
@@ -43,16 +43,17 @@ export class InstanceHandle {
     return this;
   }
 
-  /** Versatz relativ zu einer anderen Instanz, in deren lokalem Rahmen. */
+  /** Offset relative to another instance, in that instance's local frame. */
   offsetFrom(other: InstanceHandle, offset: Vec3): this {
     this.placement = { kind: "offset", from: other, offset };
     return this;
   }
 
   /**
-   * Dockt einen eigenen Port an einen fremden an und legt die Verbindung an.
-   * Eigener Eingang an fremden Ausgang: Zielzelle des Ausgangs = eigene Eingangszelle[cellIndex].
-   * Eigener Ausgang an fremden Eingang: eigene Zielzelle = Eingangszelle[cellIndex] des anderen.
+   * Docks one of this instance's ports onto another instance's port and
+   * records the connection.
+   * Own input to foreign output: the output's target cell becomes own input cell [cellIndex].
+   * Own output to foreign input: own target cell becomes the other's input cell [cellIndex].
    */
   attach(myPort: string, target: PortRef, cellIndex = 0): this {
     this.placement = { kind: "attach", myPort, target, cellIndex };
@@ -61,7 +62,7 @@ export class InstanceHandle {
 
   port(name: string): PortRef {
     if (!this.template.ports.has(name)) {
-      throw new Error(`${this.id} (${this.template.typeName}) hat keinen Port "${name}".`);
+      throw new Error(`${this.id} (${this.template.typeName}) has no port "${name}".`);
     }
     return { instance: this, port: name };
   }
@@ -69,7 +70,7 @@ export class InstanceHandle {
 
 export interface ResolvedPort extends PortDef {
   readonly instanceId: string;
-  /** absolute Zellen */
+  /** absolute cells */
   readonly absCells: readonly Vec3[];
 }
 
@@ -95,10 +96,26 @@ export interface Connection {
 export interface ResolvedAssembly {
   readonly name: string;
   readonly instances: ReadonlyMap<string, ResolvedInstance>;
-  /** Alle Blöcke, Schlüssel "x,y,z" */
+  /** All blocks, keyed "x,y,z". Air marks cells that must stay free. */
   readonly blocks: ReadonlyMap<string, ResolvedBlock>;
   readonly connections: readonly Connection[];
   readonly diagnostics: readonly Diagnostic[];
+}
+
+/** Bounding box of all blocks and port cells (inclusive). */
+export function bounds(a: ResolvedAssembly): { min: Vec3; max: Vec3 } {
+  const cells: Vec3[] = [...a.blocks.values()].map((b) => b.pos);
+  for (const i of a.instances.values()) for (const p of i.ports.values()) cells.push(...p.absCells);
+  if (cells.length === 0) return { min: [0, 0, 0], max: [0, 0, 0] };
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const c of cells) {
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k]!, c[k]!);
+      max[k] = Math.max(max[k]!, c[k]!);
+    }
+  }
+  return { min: [min[0]!, min[1]!, min[2]!], max: [max[0]!, max[1]!, max[2]!] };
 }
 
 export class Assembly {
@@ -115,14 +132,14 @@ export class Assembly {
     const n = (this.#counters.get(type.name) ?? 0) + 1;
     this.#counters.set(type.name, n);
     const handle = new InstanceHandle(id ?? `${type.name}#${n}`, type.instantiate(params));
-    if (this.#instances.some((i) => i.id === handle.id)) throw new Error(`Instanz-ID "${handle.id}" doppelt.`);
+    if (this.#instances.some((i) => i.id === handle.id)) throw new Error(`Duplicate instance id "${handle.id}".`);
     this.#instances.push(handle);
     return handle;
   }
 
   /**
-   * Reihe gleicher Komponenten. Die erste Instanz platzierst du selbst, die
-   * weiteren folgen im Abstand `step` (im lokalen Rahmen der ersten).
+   * A row of identical components. Place the first instance yourself; the
+   * others follow every `step` (in the first instance's local frame).
    */
   row<P extends Record<string, unknown>>(
     type: ComponentType<P>,
@@ -130,7 +147,7 @@ export class Assembly {
     step: Vec3,
     params?: Partial<P>,
   ): InstanceHandle[] {
-    if (count < 1) throw new Error("row: count muss >= 1 sein.");
+    if (count < 1) throw new Error("row: count must be >= 1.");
     const first = this.add(type, params);
     const out = [first];
     for (let i = 1; i < count; i++) {
@@ -139,7 +156,7 @@ export class Assembly {
     return out;
   }
 
-  /** Verbindet einen Ausgang mit einem Eingang (ohne die Position zu ändern). */
+  /** Connects an output to an input (without moving anything). */
   connect(from: PortRef, to: PortRef): void {
     this.#connections.push({ from, to });
   }
@@ -149,12 +166,14 @@ export class Assembly {
     const placed = new Map<string, { origin: Vec3; rotation: Rotation }>();
     const connections: Array<{ from: PortRef; to: PortRef }> = [...this.#connections];
 
-    // Attach erzeugt automatisch eine Verbindung
+    // attach implies a connection
     for (const inst of this.#instances) {
       if (inst.placement.kind === "attach") {
         const mine = inst.port(inst.placement.myPort);
         const myDef = inst.template.ports.get(mine.port)!;
-        connections.push(myDef.direction === "in" ? { from: inst.placement.target, to: mine } : { from: mine, to: inst.placement.target });
+        connections.push(
+          myDef.direction === "in" ? { from: inst.placement.target, to: mine } : { from: mine, to: inst.placement.target },
+        );
       }
     }
 
@@ -181,13 +200,13 @@ export class Assembly {
         diagnostics.push({
           severity: "error",
           code: "unplaced",
-          message: `${inst.id} konnte nicht platziert werden (kein Anker oder zirkuläre Abhängigkeit).`,
+          message: `${inst.id} could not be placed (no anchor or circular dependency).`,
           instances: [inst.id],
         });
       }
     }
 
-    // Instanzen auflösen, Blöcke einsammeln
+    // Resolve instances, collect blocks
     const instances = new Map<string, ResolvedInstance>();
     const blocks = new Map<string, ResolvedBlock>();
     for (const inst of this.#instances) {
@@ -206,16 +225,28 @@ export class Assembly {
         const rb: ResolvedBlock = { pos, block: rotateBlock(b.block, p.rotation), instanceId: inst.id };
         const existing = blocks.get(k);
         if (existing) {
-          const reserved = existing.block.id === "minecraft:air" || rb.block.id === "minecraft:air";
-          diagnostics.push({
-            severity: "error",
-            code: reserved ? "reserved-cell" : "overlap",
-            message: reserved
-              ? `Zelle (${k}) ist von ${existing.block.id === "minecraft:air" ? existing.instanceId : inst.id} freigehalten, aber ${existing.block.id === "minecraft:air" ? inst.id : existing.instanceId} setzt dort einen Block.`
-              : `Zelle (${k}) doppelt belegt: ${existing.instanceId} (${existing.block.id}) und ${inst.id} (${rb.block.id}).`,
-            at: pos,
-            instances: [existing.instanceId, inst.id],
-          });
+          const existingIsAir = existing.block.id === "minecraft:air";
+          const newIsAir = rb.block.id === "minecraft:air";
+          if (existingIsAir && newIsAir) continue; // both want the cell free: fine
+          if (existingIsAir || newIsAir) {
+            const keeper = existingIsAir ? existing.instanceId : inst.id;
+            const builder = existingIsAir ? inst.id : existing.instanceId;
+            diagnostics.push({
+              severity: "error",
+              code: "reserved-cell",
+              message: `Cell (${k}) must stay free for ${keeper}, but ${builder} places a block there.`,
+              at: pos,
+              instances: [keeper, builder],
+            });
+          } else {
+            diagnostics.push({
+              severity: "error",
+              code: "overlap",
+              message: `Cell (${k}) is occupied twice: ${existing.instanceId} (${existing.block.id}) and ${inst.id} (${rb.block.id}).`,
+              at: pos,
+              instances: [existing.instanceId, inst.id],
+            });
+          }
           continue;
         }
         blocks.set(k, rb);
@@ -262,16 +293,16 @@ export class Assembly {
         const otherDef = pl.target.instance.template.ports.get(pl.target.port)!;
         if (myDef.direction === otherDef.direction) {
           throw new Error(
-            `attach: ${inst.id}.${pl.myPort} und ${pl.target.instance.id}.${pl.target.port} haben dieselbe Richtung (${myDef.direction}).`,
+            `attach: ${inst.id}.${pl.myPort} and ${pl.target.instance.id}.${pl.target.port} have the same direction (${myDef.direction}).`,
           );
         }
         const otherAbs = (v: Vec3) => add(other.origin, rotateVec(v, other.rotation));
-        // Ankerzelle: bei eigenem Eingang die Zielzelle des fremden Ausgangs (erste),
-        // bei eigenem Ausgang die Eingangszelle[cellIndex] des anderen.
+        // Anchor cell: for an own input, the other output's (first) target cell;
+        // for an own output, the other input's cell [cellIndex].
         const myLocal = myDef.direction === "in" ? myDef.cells[pl.cellIndex] : myDef.cells[0];
-        const targetAbs = myDef.direction === "in" ? otherAbs(otherDef.cells[0]!) : otherAbs(otherDef.cells[pl.cellIndex]!);
-        if (!myLocal || !targetAbs) throw new Error(`attach: Zellindex ${pl.cellIndex} existiert nicht.`);
-        return { origin: sub(targetAbs, rotateVec(myLocal, rotation)), rotation };
+        const targetLocal = myDef.direction === "in" ? otherDef.cells[0] : otherDef.cells[pl.cellIndex];
+        if (!myLocal || !targetLocal) throw new Error(`attach: cell index ${pl.cellIndex} does not exist.`);
+        return { origin: sub(otherAbs(targetLocal), rotateVec(myLocal, rotation)), rotation };
       }
     }
   }

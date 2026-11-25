@@ -2,7 +2,7 @@
   "name": "@redstack/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Kern: Geometrie, Blöcke, Komponenten, Ports, Assemblies, statische Checks",
+  "description": "Core: geometry, blocks, components, ports, assemblies, static checks",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
