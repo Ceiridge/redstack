@@ -16,5 +16,6 @@
     "@redstack/testing": "workspace:*",
     "@redstack/core": "workspace:*",
     "@redstack/flow": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

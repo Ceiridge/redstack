@@ -16,6 +16,12 @@
     },
     {
       "path": "../packages/testing"
+    },
+    {
+      "path": "../packages/flow"
+    },
+    {
+      "path": "../packages/viz"
     }
   ]
 }

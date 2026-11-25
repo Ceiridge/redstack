@@ -41,12 +41,18 @@ importers:
       '@redstack/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@redstack/flow':
+        specifier: workspace:*
+        version: link:../packages/flow
       '@redstack/stdlib':
         specifier: workspace:*
         version: link:../packages/stdlib
       '@redstack/testing':
         specifier: workspace:*
         version: link:../packages/testing
+      '@redstack/viz':
+        specifier: workspace:*
+        version: link:../packages/viz
 
   packages/backend-fabric:
     dependencies:

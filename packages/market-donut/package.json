@@ -15,5 +15,6 @@
   "dependencies": {
     "@redstack/economy": "workspace:*",
     "@redstack/market-static": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

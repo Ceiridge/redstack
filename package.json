@@ -15,10 +15,12 @@
     "redstack": "node apps/cli/dist/main.js",
     "example": "pnpm run build && node apps/cli/dist/main.js all examples/dist/cactus-farm.js -o out/cactus-farm.litematic",
     "test:game": "node --env-file=.env apps/cli/dist/main.js test examples/dist/scenarios.js",
-    "server": "node packages/backend-fabric/scripts/server.mjs"
+    "server": "node packages/backend-fabric/scripts/server.mjs",
+    "figures": "pnpm run build && node examples/dist/figures.js"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
     "typescript": "6.0.3"
-  }
+  },
+  "license": "MIT"
 }

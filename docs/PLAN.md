@@ -71,10 +71,12 @@ Each phase has an exit criterion. A phase is done when it is met.
 
 ### Phase 4 – Visualisation
 - [x] Data model (`viz`): blocks, instances, flows, utilisation, highlighted spots
-- [ ] 3D viewer in the browser (candidates: Nucleation renderer, deepslate-based renderers – review first)
-- [ ] Overlays: flow strength, bottlenecks in red, events from tests, comparison of two runs
+- [x] Isometric SVG renderer (no dependencies, flat colours), hopper directions, flow labels, findings
+- [x] Standalone interactive viewer: rotate, cut away layers, toggle overlays, list of findings (`redstack render -o x.html`)
+- [ ] Events from in-game tests in the viewer, comparison of two runs
+- [ ] Full 3D viewer (candidates: Nucleation renderer, deepslate-based renderers – review first)
 
-**Exit:** on a deliberately broken farm, the fault is visible immediately in the viewer.
+**Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
 ### Phase 5 – Standard library and AI loop
 - [ ] 10–20 proven components (rebuilt from archives, respecting licences and credits), each with a test and docs
@@ -104,6 +106,6 @@ Each phase has an exit criterion. A phase is done when it is met.
 - LP solver (phase 2b)
 
 ## Next steps
-1. Litematica load test (needs a PC)
+1. Litematica load test (needs a PC); make the repository public
 2. Bridge assembly → process, then the optimizer (phase 2b)
 3. More components with tests (phase 5), starting with water-based collection

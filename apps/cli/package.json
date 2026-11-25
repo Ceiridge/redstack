@@ -19,5 +19,6 @@
     "@redstack/viz": "workspace:*",
     "@redstack/testing": "workspace:*",
     "@redstack/backend-fabric": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

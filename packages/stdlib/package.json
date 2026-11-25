@@ -14,5 +14,6 @@
   },
   "dependencies": {
     "@redstack/core": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

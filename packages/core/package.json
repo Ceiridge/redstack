@@ -12,5 +12,6 @@
       "default": "./dist/index.js"
     }
   },
-  "dependencies": {}
+  "dependencies": {},
+  "license": "MIT"
 }

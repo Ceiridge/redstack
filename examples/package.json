@@ -15,6 +15,9 @@
   "dependencies": {
     "@redstack/core": "workspace:*",
     "@redstack/stdlib": "workspace:*",
-    "@redstack/testing": "workspace:*"
-  }
+    "@redstack/testing": "workspace:*",
+    "@redstack/flow": "workspace:*",
+    "@redstack/viz": "workspace:*"
+  },
+  "license": "MIT"
 }

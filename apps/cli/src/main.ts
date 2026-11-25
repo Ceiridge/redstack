@@ -6,9 +6,11 @@
  *   redstack flow  <module.js>                flow model
  *   redstack build <module.js> -o <file>      write a schematic
  *   redstack all   <module.js> -o <file>      everything + visualisation data (.viz.json)
+ *   redstack render <module.js> -o <file>     picture (.svg) or interactive viewer (.html)
  *   redstack test  <module.js> [name...]      in-game scenarios (see test-command.ts)
  *
- * Options: --format litematic|schem, --data-version <n>, --json, -o <dir> for test reports
+ * Options: --format litematic|schem, --data-version <n>, --json, -o <dir> for test reports,
+ *          --rotation <0-3>, --title <text> for render
  *
  * For check/flow/build/all, the module's default export is an Assembly or a
  * function returning one.
@@ -21,7 +23,7 @@ import { parseArgs } from "node:util";
 import { Assembly, type SchematicFormat, formatDiagnostic, hasErrors, runChecks } from "@redstack/core";
 import { nativeDataVersion, nucleationWriter } from "@redstack/export-nucleation";
 import { analyzeFlow, formatFlowReport } from "@redstack/flow";
-import { toVizModel } from "@redstack/viz";
+import { toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { testCommand } from "./test-command.js";
 
 async function loadAssembly(path: string): Promise<Assembly> {
@@ -33,7 +35,7 @@ async function loadAssembly(path: string): Promise<Assembly> {
 }
 
 function usage(): never {
-  console.error("usage: redstack <check|flow|build|all|test> <module.js> [-o file] [--format litematic|schem] [--data-version n] [--json]");
+  console.error("usage: redstack <check|flow|build|all|render|test> <module.js> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--json]");
   process.exit(2);
 }
 
@@ -45,10 +47,12 @@ async function main(): Promise<void> {
       format: { type: "string", default: "litematic" },
       "data-version": { type: "string" },
       json: { type: "boolean", default: false },
+      rotation: { type: "string", default: "0" },
+      title: { type: "string" },
     },
   });
   const [cmd, modPath, ...rest] = positionals;
-  if (!cmd || !modPath || !["check", "flow", "build", "all", "test"].includes(cmd)) usage();
+  if (!cmd || !modPath || !["check", "flow", "build", "all", "render", "test"].includes(cmd)) usage();
   if (cmd === "test") {
     const passed = await testCommand(modPath, rest, { json: values.json ?? false, outDir: values.out ?? "out/reports" });
     process.exit(passed ? 0 : 1);
@@ -70,6 +74,20 @@ async function main(): Promise<void> {
   if (cmd === "flow" || cmd === "all") {
     console.log(values.json ? JSON.stringify({ ...flow, ports: Object.fromEntries(flow.ports), bases: [...flow.bases] }, null, 2) : formatFlowReport(flow));
   }
+  if (cmd === "render") {
+    if (!values.out) usage();
+    const model = toVizModel(assembly, flow, allDiags);
+    const out = resolve(values.out);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(
+      out,
+      out.endsWith(".html")
+        ? toHtml(model)
+        : toSvg(model, { rotation: Number(values.rotation), ...(values.title ? { title: values.title } : {}) }),
+    );
+    console.log(`Rendered: ${out}`);
+    return;
+  }
   if (hasErrors(allDiags)) {
     console.error("Errors found – no file written.");
     process.exit(1);
@@ -90,9 +108,11 @@ async function main(): Promise<void> {
     console.log(`Written: ${out} (${res.bytes.length} bytes, data version ${dv ?? nativeDataVersion()})`);
     for (const l of res.losses) console.warn(`Lost in conversion: ${l}`);
     if (cmd === "all") {
-      const vizPath = out.replace(/\.[^.]+$/, "") + ".viz.json";
-      writeFileSync(vizPath, JSON.stringify(toVizModel(assembly, flow, allDiags), null, 2));
-      console.log(`Visualisation data: ${vizPath}`);
+      const base = out.replace(/\.[^.]+$/, "");
+      const model = toVizModel(assembly, flow, allDiags);
+      writeFileSync(`${base}.viz.json`, JSON.stringify(model, null, 2));
+      writeFileSync(`${base}.html`, toHtml(model));
+      console.log(`Viewer: ${base}.html`);
     }
   }
 }
