@@ -18,6 +18,7 @@ The standard library ([`packages/stdlib`](../packages/stdlib)) and what each com
 | `SmelterArray` | game-tested | 4 furnaces: 1,440 stone/h after the warm-up (= model) |
 | `Crafter` | game-tested | fires only on a full grid, so the recipe cannot be pre-empted: planks → 1,127 chests/h, zero buttons, plates or sticks |
 | `PatternCrafter` | game-tested | any recipe, shaped with several ingredients too, fed from up to four sides. A seeded grid keeps the pattern, and it fires only while every feed is backed up, so a slot never runs empty: pistons 2,000/h, chests 3,600/h, nothing but the result, clean stop and restart when an ingredient runs out |
+| `CrafterRow` | game-tested | compact and stackable: 2 blocks per crafter, one clock, gate and switch for the row, one feeding hopper per crafter; 4 crafters: 3,990 chests/h (model 4,000), nothing else |
 | `TorchClock` | game-tested | any period from 12 game ticks in steps of 4, a lever that holds it (saved off), a lockable output; 12/20/36/100 ticks measured exactly on Fabric and mc-tick; cannot carry two pulses |
 | `EdgeDetector` | game-tested | observer watching a note block: a 2-tick pulse on every edge (measured: twice the clock's rate) |
 | `PulseCounter` | game-tested | test fixture: a dropper drops one item into a chest per rising edge |

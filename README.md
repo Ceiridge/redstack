@@ -7,8 +7,8 @@
 ![Minecraft 26.3](https://img.shields.io/badge/Minecraft-26.3-5b8731)
 
 <p align="center">
-  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests above single hoppers – positions, rotations and hoppers chosen by the layout search." width="720">
-  <br><sub>Two kelp cores, four supply chests – where they go, which way they face and every hopper: chosen by the solver. Measured in-game: <b>34,500 kelp/h</b> for one AFK player.</sub>
+  <img src="docs/images/factory-3d.png" alt="3D render of three stacked rows of eight crafters each: a chest of ingredients above every crafter, a chest of results below, the shared clock and the readiness lines of each row in front." width="460">
+  <br><sub>Three <code>CrafterRow</code>s of eight crafters – chests, furnaces, slabs. One clock, one gate, one switch per row; a chest in and a chest out per crafter. A tested row of four makes <b>3,990 chests/h</b> and never anything else (<a href="examples/src/factory.ts">source</a>).</sub>
 </p>
 
 ```ts
@@ -43,6 +43,8 @@ PASS kelp-twin (fabric-carpet, 1 run(s))
 | **Economy** | A farm as a process: in, out, build cost, break-even; an optimizer picks the most profitable farms per AFK spot. |
 
 ## What it has found so far
+
+<p align="center"><img src="docs/images/kelp-twin-3d.png" alt="Two kelp cores facing an AFK player, placed by the layout search." width="460"><br><sub>Placed by the layout search, measured at 34,500 kelp/h.</sub></p>
 
 
 

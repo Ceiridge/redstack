@@ -12,6 +12,7 @@ import {
   HopperLine,
   ItemFilter,
   PatternCrafter,
+  CrafterRow,
   PulseCounter,
   EdgeDetector,
   TorchClock,
@@ -345,6 +346,33 @@ export function wireScenario(): Scenario {
   });
 }
 
+/** CrafterRow: four crafters, a chest of planks above each, a chest below each. */
+export function crafterRowScenario(): Scenario {
+  const r = assembly("crafter-row", (f) => {
+    f.add(CrafterRow({ crafters: 4 })).at([0, 0, 0]);
+    for (let i = 0; i < 4; i++) {
+      f.block(B.chest()).at([2 * i, 2, 0]);
+      f.block(B.chest()).at([2 * i, -3, 0]);
+    }
+  }).resolve();
+  const wrong = ["minecraft:oak_button", "minecraft:oak_pressure_plate", "minecraft:stick", "minecraft:crafting_table", "minecraft:oak_slab"];
+  return scenario(r, {
+    durationTicks: 12_000,
+    warmupTicks: 5_000,
+    sampleEveryTicks: 1_000,
+    actions: [
+      ...[0, 2, 4, 6].map((x) => ({ type: "insert" as const, at: [x, 2, 0] as Vec3, item: "minecraft:oak_planks", count: 27 * 64 })),
+      { type: "use", at: [-4, 2, -1] },
+    ],
+    measure: { containers: [0, 2, 4, 6].map((x) => [x, -3, 0] as Vec3), items: ["minecraft:chest", ...wrong] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:chest", perHour: 3_800 },
+      ...wrong.map((item) => ({ type: "rate-at-most" as const, item, perHour: 0 })),
+      { type: "no-ground-items" },
+    ],
+  });
+}
+
 /** EdgeDetector behind a TorchClock: a pulse on both edges, so twice the clock's rate. */
 export function edgeDetectorScenario(): Scenario {
   const r = assembly("edge-detector", (f) => {
@@ -464,6 +492,7 @@ export const scenarios: Record<string, () => Scenario> = {
   "torch-clock-100": () => torchClockScenario(100),
   "edge-detector": edgeDetectorScenario,
   wire: wireScenario,
+  "crafter-row": crafterRowScenario,
   "pattern-crafter": () => patternCrafterScenario(),
   "pattern-crafter-resume": () => patternCrafterScenario(true),
   "pattern-crafter-chest": () =>

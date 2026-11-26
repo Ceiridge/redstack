@@ -378,3 +378,94 @@ export const PatternCrafter = component(
     c.note("Starts only after the grid and the feeding hoppers fill up (about 63 items per slot plus 23 per hopper).");
   },
 );
+
+/**
+ * A row of seeded crafters for a one-ingredient recipe, two blocks per
+ * crafter, sharing one clock, one gate and one switch – the compact,
+ * stackable counterpart of PatternCrafter.
+ *
+ * Each crafter: a feeding hopper on top (`in0`, `in1`, … – feed it from
+ * above, e.g. a chest or a hopper line), the crafter facing down into a
+ * barrel, a hopper below it (`out0`, …). Behind the row a dust line on a
+ * row of blocks fires every crafter at once. In front, per crafter, a
+ * comparator reads the feeding hopper; two dust are the threshold (≥ 23
+ * items, i.e. backed up), a torch turns it into "not ready", and a dust line
+ * collecting the torches locks the clock's output. Same guarantee as
+ * PatternCrafter: no crafter ever fires with a slot about to run empty.
+ *
+ * Switch: the lever on the clock's block (west end); saved off.
+ * Rate: one hopper per crafter, so 9,000 ingredients/h each.
+ *
+ * Measured (Fabric, 26.3): 4 crafters, planks → 3,990 chests/h (model
+ * 4,000), nothing but chests, nothing on the ground.
+ */
+export const CrafterRow = component(
+  {
+    name: "CrafterRow",
+    description: "Row of seeded crafters (one ingredient), shared clock and gate. Inputs: in0…; outputs: out0…",
+    status: "game-tested",
+    params: {
+      recipe: { pattern: ["PPP", "P.P", "PPP"], key: { P: "minecraft:oak_planks" }, result: "minecraft:chest" } as Recipe,
+      crafters: 4,
+      on: false,
+    },
+  },
+  (c, { recipe, crafters, on }) => {
+    const feeds = patternCrafterFeeds(recipe, 1);
+    const item = feeds[0]!.item;
+    const n = feeds[0]!.perCraft;
+    const solid = () => B.of(c.material(M.solid));
+    const dust = (p: Vec3) => {
+      c.block(wire()).at(p);
+      c.block(solid()).at([p[0], p[1] - 1, p[2]]);
+    };
+    const disabled = disabledSlots(recipe);
+    const seed = recipe.pattern.flatMap((row, y) => [0, 1, 2].flatMap((x) => (recipe.key[row[x] ?? " "] ? [{ slot: y * 3 + x, id: item, count: 1 }] : [])));
+    const last = 2 * (crafters - 1);
+    for (let i = 0; i < crafters; i++) {
+      const x = 2 * i;
+      c.block(
+        B.of("minecraft:crafter", { orientation: "down_north", triggered: false, crafting: false })
+          .withSlots(seed)
+          .withData(disabled.length ? { disabled_slots: `[I;${disabled.join(",")}]` } : {}),
+      ).at([x, 0, 0]);
+      c.block(B.of("minecraft:barrel", { facing: "up", open: false })).at([x, -1, 0]);
+      const out = c.block(B.hopper().outputTo("down")).at([x, -2, 0]);
+      const feed = c.block(B.hopper().outputTo("down")).at([x, 1, 0]);
+      // Readiness: comparator → threshold (2 dust) → block → torch (on = not ready)
+      c.block(B.comparator("compare").signalTowards("south")).at([x, 1, 1]);
+      c.block(solid()).at([x, 0, 1]);
+      dust([x, 1, 2]);
+      dust([x, 1, 3]);
+      c.block(solid()).at([x, 1, 4]);
+      c.block(B.of("minecraft:redstone_wall_torch", { facing: "south", lit: true })).at([x, 1, 5]);
+      c.input(`in${i}`, feed, { item, description: `${item} from above` });
+      c.output(`out${i}`, out.down, { item: recipe.result });
+    }
+    // Fire line behind the crafters: dust on blocks that touch the crafters
+    for (let x = -1; x <= last; x++) dust([x, 1, -1]);
+    // "Not ready" line in front, flowing west to the gate; a repeater every 8 blocks (between torches)
+    for (let x = last; x >= -2; x--) {
+      if (x >= 0 && x % 8 === 7) {
+        c.block(B.repeater(1).signalTowards("west")).at([x, 1, 6]);
+        c.block(solid()).at([x, 0, 6]);
+      } else dust([x, 1, 6]);
+    }
+    for (let z = 5; z >= 1; z--) dust([-2, 1, z]);
+    // Clock at the west end; its output repeater (−2,1,−1) is locked from the south by the "not ready" line
+    const need = Math.max(n * 8, (recipe.count ?? 1) * 8, 12) * 1.1;
+    c.add(TorchClock({ period: need, on })).at([-4, 1, -1]);
+    c.block(B.repeater(1).signalTowards("north")).at([-2, 1, 0]);
+    c.block(solid()).at([-2, 0, 0]);
+    const period = torchClockPeriod(need);
+    const perCrafter = 72_000 / period;
+    c.crafts(
+      Array.from({ length: crafters }, (_, i) => ({ from: `in${i}`, item, perCraft: n / crafters })),
+      "out0",
+      { output: recipe.result, outputPerCraft: recipe.count ?? 1, maxCraftsPerHour: perCrafter * crafters },
+      "game-mechanic",
+      `${crafters} crafters, clock period ${period} game ticks (all output counted at out0 in the flow model)`,
+    );
+    c.note(`${crafters} × ${Math.round(perCrafter)} crafts/h once every feeding hopper is backed up; switch: lever at (−4, 2, −1), saved ${on ? "on" : "off"}.`);
+  },
+);
