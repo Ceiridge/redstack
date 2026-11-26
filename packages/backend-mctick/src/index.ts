@@ -141,6 +141,11 @@ export class McTickBackend implements TestBackend {
     if (s.actions.some((x) => x.type === "set")) out.push('"set" actions are not supported yet');
     if (s.world.terrain === "terrain") out.push("natural terrain is not supported");
     if (typeof s.placement === "object") out.push("mixed strict/with-updates placement is not supported");
+    const ids = new Set([...s.assembly.blocks.values()].map((b) => b.block.id));
+    const crafting = ["minecraft:furnace", "minecraft:blast_furnace", "minecraft:smoker", "minecraft:crafter"].filter((id) => ids.has(id));
+    if (crafting.length) out.push(`the engine does not execute recipes (${crafting.join(", ")})`);
+    const boxes = [...ids].some((id) => /shulker_box$/.test(id)) || s.actions.some((a) => a.type === "insert" && /shulker_box/.test(a.item));
+    if (boxes) out.push("filled shulker boxes stack and lose their contents in the engine");
     const env = s.assembly.env;
     if (env.hopperTransferTicks !== 8 || env.hopperAmount !== 1 || Object.keys(env.growthModifiers).length) {
       out.push("Spigot/Paper settings cannot be emulated");
