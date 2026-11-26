@@ -145,6 +145,45 @@ export function rotateBlock(spec: BlockSpec, rot: Rotation): BlockSpec {
   return { id: spec.id, props: out };
 }
 
+const MIRROR_X: Readonly<Record<string, string>> = { east: "west", west: "east" };
+/** Handedness flips under a mirror */
+const HANDED: Readonly<Record<string, string>> = {
+  left: "right",
+  right: "left",
+  inner_left: "inner_right",
+  inner_right: "inner_left",
+  outer_left: "outer_right",
+  outer_right: "outer_left",
+};
+const RAIL_MIRROR: Readonly<Record<string, string>> = {
+  south_east: "south_west",
+  south_west: "south_east",
+  north_east: "north_west",
+  north_west: "north_east",
+  ascending_east: "ascending_west",
+  ascending_west: "ascending_east",
+};
+
+/**
+ * Mirrors a block across the x axis (east ↔ west): facing, connections,
+ * stair shapes, door hinges, double-chest halves, rail shapes and 16-step
+ * rotations (signs, banners, heads).
+ */
+export function mirrorBlock(spec: BlockSpec): BlockSpec {
+  const out: Record<string, PropValue> = {};
+  const conn: Record<string, PropValue> = {};
+  for (const [k, v] of Object.entries(spec.props)) {
+    if (CONNECTION_PROPS.includes(k)) conn[MIRROR_X[k] ?? k] = v;
+    else if (DIRECTIONAL_VALUE_PROPS.has(k) && typeof v === "string") out[k] = MIRROR_X[v] ?? v;
+    else if ((k === "shape" || k === "hinge" || k === "type") && typeof v === "string" && HANDED[v]) out[k] = HANDED[v]!;
+    else if (k === "shape" && typeof v === "string" && RAIL_MIRROR[v]) out[k] = RAIL_MIRROR[v]!;
+    else if (k === "rotation" && typeof v === "number") out[k] = (16 - v) % 16;
+    else out[k] = v;
+  }
+  for (const [k, v] of Object.entries(conn)) out[k] = v;
+  return { id: spec.id, props: out };
+}
+
 /** Canonical block string: minecraft:hopper[enabled=true,facing=down] (properties sorted). */
 export function formatBlock(spec: BlockSpec): string {
   const entries = Object.entries(spec.props).sort(([a], [b]) => a.localeCompare(b));

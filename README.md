@@ -104,6 +104,8 @@ for (const core of [a, b]) for (const side of ["West", "East"])
   f.route(f.add(SupplyChest, supply).free({ rotations: [0] }).port("out"), core.port(`bonemeal${side}`));
 ```
 
+**Mirror images for free.** `c.add(mirrored(KelpBonemealCore))` mirrors a component east ↔ west, children and block states included (stair shapes, door hinges, chest halves, rails, sign rotation). A mirrored design is marked `unverified` until tested, because redstone update order is direction-dependent; the mirrored kelp farm measures the same as the original.
+
 **Materials, not hard-coded blocks.** Components ask for a slot such as "any fence" (`#minecraft:fences`) or "any plain solid block" (`#redstack:solid`) with a default. Build with what you have: `assembly(name, build, { materials: { cactusBreaker: "minecraft:spruce_fence" } })` – the checks verify the choice against Minecraft's block tags.
 
 **Environments.** Rates depend on the game version and server settings (random tick speed, Spigot/Paper hopper and growth settings, simulation distance). Presets: `vanilla`, `paperDefaults`, `donutGuess` – guesses are labelled as such. Test backends refuse environments they cannot reproduce instead of measuring the wrong thing.

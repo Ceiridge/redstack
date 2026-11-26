@@ -66,22 +66,23 @@ export function hopperCollector(): Scenario {
  * observer clock several times over, and the extra pulses make the piston
  * delete the water the kelp grows into (true for the original design too).
  */
-export function kelpFarmScenario(): Scenario {
-  const r = kelpFarm(2).resolve();
+export function kelpFarmScenario(mirror = false): Scenario {
+  const r = kelpFarm(2, mirror).resolve();
+  const m = (v: readonly [number, number, number]): [number, number, number] => (mirror ? [-v[0], v[1], v[2]] : [v[0], v[1], v[2]]);
   const containers = [...r.blocks.values()]
     .filter((b) => ["minecraft:chest", "minecraft:hopper", "minecraft:dispenser"].includes(b.block.id))
     .map((b) => b.pos);
   return scenario(r, {
     requires: ["items", "block-updates", "redstone", "fake-player"],
-    world: { terrain: "flat", groundY: 0, afkSpot: [1, 1, 5] },
+    world: { terrain: "flat", groundY: 0, afkSpot: m([1, 1, 5]) },
     durationTicks: 6_000,
     warmupTicks: 400,
     sampleEveryTicks: 600,
     placement: "strict",
     actions: [
-      { type: "insert", at: [-1, 3, 1], item: "minecraft:bone_meal", count: 27 * 64 },
-      { type: "insert", at: [3, 3, 3], item: "minecraft:bone_meal", count: 27 * 64 },
-      { type: "use", at: [2, 3, 4] },
+      { type: "insert", at: m([-1, 3, 1]), item: "minecraft:bone_meal", count: 27 * 64 },
+      { type: "insert", at: m([3, 3, 3]), item: "minecraft:bone_meal", count: 27 * 64 },
+      { type: "use", at: m([2, 3, 4]) },
     ],
     measure: { player: true, containers, items: ["minecraft:kelp", "minecraft:bone_meal"] },
     expectations: [{ type: "matches-flow-model", tolerance: 0.1 }],
@@ -145,7 +146,8 @@ export function cactusFarm16(): Scenario {
 export const scenarios: Record<string, () => Scenario> = {
   "hopper-line-throughput": hopperLineThroughput,
   "hopper-collector": hopperCollector,
-  "kelp-farm": kelpFarmScenario,
+  "kelp-farm": () => kelpFarmScenario(),
+  "kelp-farm-mirrored": () => kelpFarmScenario(true),
   "kelp-twin": kelpTwinScenario,
   "cactus-row-fence": () => cactusSurvival("row", "fence"),
   "cactus-row-glass": () => cactusSurvival("row", "glass"),

@@ -44,7 +44,7 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [x] Importing schematics as components (`schematicComponent`), `redstack inspect`
 - [x] Hopper router: `route`, `collect` (Steiner tree, greedy), `distribute` (branches below network hoppers); avoids draining, injection, steady redstone power and reserved space
 - [x] `converts` rates (input item → output item), so starved machines show up in the flow model
-- [ ] Mirroring components
+- [x] Mirroring components: `mirrored(Type)` mirrors geometry and block states (facing, connections, stair/hinge/chest handedness, rails, 16-step rotation), nested and rotated children included; the mirrored kelp farm measures the same as the original
 
 ### Phase 1b – Layout solver
 The router places transport between fixed components. Choosing the positions and rotations of the components themselves – the compact, nested layouts – is a combinatorial problem for a constraint solver.
@@ -127,5 +127,6 @@ The router places transport between fixed components. Choosing the positions and
 
 ## Next steps
 1. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and the optimizer is only as good as its prices
-2. Mirroring components (more layout options, symmetric farms)
+2. Mirrored variants as options in the layout search (`free({ mirror: true })`)
+3. More proven components (phase 5): water-based collection, a TNT-duper module from the benchmark
 3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark

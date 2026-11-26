@@ -11,7 +11,7 @@
  * needed where geometry is genuinely irregular.
  */
 
-import { type BlockSpec, block as makeBlock, rotateBlock } from "./blocks.js";
+import { type BlockSpec, block as makeBlock, mirrorBlock, rotateBlock } from "./blocks.js";
 import type { Diagnostic } from "./diagnostics.js";
 import { type Environment, VANILLA_26_3, hopperItemsPerHour } from "./environment.js";
 import {
@@ -214,6 +214,52 @@ export function component<P extends object = Record<string, never>>(
     },
   });
   return type;
+}
+
+/** Mirror of a point or cell across the x axis */
+const mx = (v: Vec3): Vec3 => [-v[0], v[1], v[2]];
+
+/**
+ * The mirror image of a template (east ↔ west), children included. Mirroring
+ * commutes with rotation as M·R(r) = R(−r)·M, so a child at origin o with
+ * rotation r becomes a mirrored child at M·o with rotation −r.
+ */
+export function mirrorTemplate(t: ComponentTemplate): ComponentTemplate {
+  const portDef = (d: PortDef): PortDef => ({ ...d, cells: d.cells.map(mx) });
+  return {
+    ...t,
+    blocks: t.blocks.map((b) => ({ pos: mx(b.pos), block: mirrorBlock(b.block) })),
+    clear: t.clear.map(mx),
+    ports: new Map([...t.ports].map(([n, d]) => [n, portDef(d)])),
+    portView: new Map([...t.portView].map(([n, d]) => [n, portDef(d)])),
+    children: t.children.map((c) => ({ ...c, origin: mx(c.origin), rotation: normalizeRotation(-c.rotation), template: mirrorTemplate(c.template) })),
+    notes: [...t.notes, "mirrored (east ↔ west)"],
+    diagnostics: t.diagnostics.map((d) => (d.at ? { ...d, at: mx(d.at) } : d)),
+  };
+}
+
+/**
+ * A component's mirror image as a component of its own:
+ * `c.add(mirrored(KelpBonemealCore))`. Ports, rates and parameters stay the
+ * same; geometry and block states are mirrored east ↔ west. Mirrored
+ * redstone usually behaves the same, but not always (update order depends
+ * on position) – test it in-game before trusting it.
+ */
+export function mirrored<P extends object>(type: ComponentType<P>): ComponentType<P> {
+  const name = `${type.componentName}Mirrored`;
+  const m = ((params?: Partial<P>): ComponentSpec<P> => ({ type: m, params: params ?? {} })) as ComponentType<P>;
+  Object.defineProperties(m, {
+    componentName: { value: name, enumerable: true },
+    description: { value: `${type.description} (mirrored)`, enumerable: true },
+    status: { value: type.status === "draft" ? "draft" : "unverified", enumerable: true },
+    defaults: { value: type.defaults, enumerable: true },
+    instantiate: {
+      value(params?: Partial<P>, ctx?: BuildContext): ComponentTemplate {
+        return { ...mirrorTemplate(type.instantiate(params, ctx)), typeName: name, status: m.status };
+      },
+    },
+  });
+  return m;
 }
 
 // ---------- Building blocks ----------

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { B, type Vec3, assembly, component, key, runChecks, solveLayout } from "./index.js";
+import { B, type Vec3, assembly, component, formatBlock, key, mirrorBlock, mirrorTemplate, mirrored, runChecks, solveLayout } from "./index.js";
 
 const Source = component({ name: "Source" }, (c) => {
   const chest = c.block(B.chest());
@@ -118,5 +118,47 @@ describe("free instances in components", () => {
       f.connect(m.port("out"), pad.port("in"));
     }).resolve();
     assert.ok(runChecks(r).some((d) => d.code === "layout-failed"));
+  });
+});
+
+describe("mirroring", () => {
+  it("mirrors block states east ↔ west, including handedness and 16-step rotation", () => {
+    const m = (id: string, props: Record<string, string | number | boolean>) => mirrorBlock({ id, props }).props;
+    assert.deepEqual(m("minecraft:oak_stairs", { facing: "east", shape: "inner_left", half: "bottom" }), { facing: "west", shape: "inner_right", half: "bottom" });
+    assert.deepEqual(m("minecraft:chest", { facing: "north", type: "left" }), { facing: "north", type: "right" });
+    assert.deepEqual(m("minecraft:oak_fence", { east: true, west: false, north: true }), { east: false, west: true, north: true });
+    assert.deepEqual(m("minecraft:oak_sign", { rotation: 4 }), { rotation: 12 });
+    assert.deepEqual(m("minecraft:rail", { shape: "south_east" }), { shape: "south_west" });
+  });
+
+  const Inner = component({ name: "Inner" }, (c) => {
+    c.block(B.hopper().outputTo("east")).at([1, 0, 0]);
+    c.block(B.of("minecraft:oak_stairs", { facing: "north", shape: "outer_left", half: "bottom", waterlogged: false })).at([2, 0, -1]);
+    c.output("out", [2, 0, 0]);
+  });
+  const Outer = component({ name: "Outer" }, (c) => {
+    c.block(B.chest()).at([0, 0, 0]);
+    c.add(Inner).at([3, 1, 2]).rotated(1);
+    c.add(Inner).at([-2, 0, 0]).rotated(3);
+  });
+
+  it("mirrors nested, rotated children exactly like mirroring the resolved blocks", () => {
+    const plain = assembly("plain", (f) => void f.add(Outer).at([0, 0, 0])).resolve();
+    const mirror = assembly("mirror", (f) => void f.add(mirrored(Outer)).at([0, 0, 0])).resolve();
+    assert.equal(mirror.blocks.size, plain.blocks.size);
+    for (const b of plain.blocks.values()) {
+      const m = mirror.blocks.get(key([-b.pos[0], b.pos[1], b.pos[2]]));
+      assert.ok(m, `missing mirror of ${key(b.pos)}`);
+      assert.deepEqual(m.block, mirrorBlock(b.block));
+    }
+  });
+
+  it("mirroring twice gives the original", () => {
+    const once = mirrored(Outer).instantiate();
+    const twice = mirrorTemplate(once);
+    const orig = Outer.instantiate();
+    const str = (t: typeof orig) => t.blocks.map((b) => `${key(b.pos)} ${formatBlock(b.block)}`);
+    assert.deepEqual(str(twice), str(orig));
+    assert.deepEqual(twice.children.map((c) => [c.origin, c.rotation]), orig.children.map((c) => [c.origin, c.rotation]));
   });
 });
