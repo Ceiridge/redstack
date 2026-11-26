@@ -139,6 +139,7 @@ export class McTickBackend implements TestBackend {
     if (s.measure.player) out.push("mc-tick has no players: items picked up by the AFK player cannot be counted");
     if (s.actions.some((x) => x.type === "set")) out.push('"set" actions are not supported yet');
     if (s.world.terrain === "terrain") out.push("natural terrain is not supported");
+    if (typeof s.placement === "object") out.push("mixed strict/with-updates placement is not supported");
     const env = s.assembly.env;
     if (env.hopperTransferTicks !== 8 || env.hopperAmount !== 1 || Object.keys(env.growthModifiers).length) {
       out.push("Spigot/Paper settings cannot be emulated");

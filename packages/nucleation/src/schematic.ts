@@ -133,6 +133,8 @@ export interface SchematicComponentOptions {
    * with its lowest corner at (0,0,0).
    */
   readonly setup?: (c: ComponentBuilder, find: (match: string | ((block: string) => boolean)) => Placed[]) => void;
+  /** Leave out blocks (position in the design's frame, lowest corner at 0,0,0), e.g. a storage hall to replace */
+  readonly exclude?: (pos: Vec3, block: string) => boolean;
 }
 
 /**
@@ -146,8 +148,10 @@ export function schematicComponent(o: SchematicComponentOptions): ComponentType 
   return component({ name: o.name, status: o.status ?? "unverified", description: o.description ?? "" }, (c) => {
     const placed: Array<{ p: Placed; block: string }> = [];
     for (const b of blocks) {
+      const pos: Vec3 = [b.pos[0] - min[0], b.pos[1] - min[1], b.pos[2] - min[2]];
+      if (o.exclude?.(pos, b.block)) continue;
       const { id, props } = parseBlockString(b.block);
-      const p = c.block(B.of(id, props)).at([b.pos[0] - min[0], b.pos[1] - min[1], b.pos[2] - min[2]]);
+      const p = c.block(B.of(id, props)).at(pos);
       placed.push({ p, block: b.block });
     }
     const find = (match: string | ((block: string) => boolean)) =>

@@ -67,7 +67,11 @@ export type Action =
  * working world, where updates during placement would set off redstone
  * (a TNT duper can blow itself up while it is half built).
  */
-export type Placement = "with-updates" | "strict";
+export type Placement =
+  | "with-updates"
+  | "strict"
+  /** Strict for the instances the predicate selects (placed first), with updates for the rest */
+  | { readonly strict: (instanceId: string) => boolean };
 
 /** What is counted at each sample. Rates are the change of these counts over time. */
 export interface Measurement {

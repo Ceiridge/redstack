@@ -177,11 +177,14 @@ export class FabricCarpetBackend implements TestBackend {
     }
 
     // 2. Blocks bottom-up
-    const blocks = [...a.blocks.values()].sort((x, y) => x.pos[1] - y.pos[1]);
+    const strict = (instanceId: string) =>
+      s.placement === "strict" ? true : s.placement === "with-updates" ? false : s.placement.strict(instanceId);
+    // Strict blocks first, then the rest bottom-up with updates
+    const blocks = [...a.blocks.values()].sort((x, y) => Number(strict(y.instanceId)) - Number(strict(x.instanceId)) || x.pos[1] - y.pos[1]);
     for (const b of blocks) {
       const p = w(b.pos);
       const nbt = b.block.items?.length ? itemsSnbt(b.block.items) : "";
-      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${nbt}${s.placement === "strict" ? " strict" : ""}`, /Changed the block/);
+      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${nbt}${strict(b.instanceId) ? " strict" : ""}`, /Changed the block/);
     }
     // 3. Fake player on a platform, after the blocks: the design may provide its floor
     const afk = w(s.world.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
