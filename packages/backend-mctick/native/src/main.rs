@@ -26,6 +26,9 @@ struct Request {
     sample_every: u64,
     containers: Vec<[i32; 3]>,
     items: Vec<String>,
+    /// Debugging: report block state and contents of these cells at the end
+    #[serde(default)]
+    probes: Vec<[i32; 3]>,
 }
 
 #[derive(Deserialize)]
@@ -49,6 +52,15 @@ struct Response {
     samples: Vec<Sample>,
     ground_items: Vec<GroundItem>,
     ms_per_tick: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    probes: Vec<Probe>,
+}
+
+#[derive(Serialize)]
+struct Probe {
+    at: [i32; 3],
+    block: String,
+    items: Vec<(String, u8)>,
 }
 
 #[derive(Serialize)]
@@ -118,6 +130,19 @@ fn run(req: Request) -> Result<Response, String> {
         samples.push(Sample { tick: done, stored: count(&sim, &req.containers, &req.items) });
     }
     let elapsed = t0.elapsed().as_secs_f64() * 1000.0;
+    let probes = req
+        .probes
+        .iter()
+        .map(|p| {
+            let pos = Pos::new(p[0], p[1], p[2]);
+            let id = sim.world().get(pos);
+            Probe {
+                at: *p,
+                block: sim.registry().descriptor(id).map(|d| d.to_string()).unwrap_or_default(),
+                items: sim.inventory(pos).map(|inv| inv.stacks.iter().map(|s| (s.id.clone(), s.count)).collect()).unwrap_or_default(),
+            }
+        })
+        .collect();
     let ground_items = sim
         .item_entities()
         .iter()
@@ -130,6 +155,7 @@ fn run(req: Request) -> Result<Response, String> {
         samples,
         ground_items,
         ms_per_tick: if done > 0 { Some(elapsed / done as f64) } else { None },
+        probes,
     })
 }
 
@@ -137,16 +163,17 @@ fn main() {
     let mut input = String::new();
     std::io::stdin().read_to_string(&mut input).expect("stdin");
     let response = match serde_json::from_str::<Request>(&input) {
-        Err(e) => Response { ok: false, error: Some(format!("request: {e}")), samples: vec![], ground_items: vec![], ms_per_tick: None },
+        Err(e) => Response { ok: false, error: Some(format!("request: {e}")), samples: vec![], ground_items: vec![], ms_per_tick: None, probes: vec![] },
         Ok(req) => match std::panic::catch_unwind(|| run(req)) {
             Ok(Ok(r)) => r,
-            Ok(Err(e)) => Response { ok: false, error: Some(e), samples: vec![], ground_items: vec![], ms_per_tick: None },
+            Ok(Err(e)) => Response { ok: false, error: Some(e), samples: vec![], ground_items: vec![], ms_per_tick: None, probes: vec![] },
             Err(p) => Response {
                 ok: false,
                 error: Some(p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_else(|| "engine panic".into())),
                 samples: vec![],
                 ground_items: vec![],
                 ms_per_tick: None,
+                probes: vec![],
             },
         },
     };

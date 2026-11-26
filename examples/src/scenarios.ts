@@ -4,7 +4,7 @@
  */
 
 import { B, assembly } from "@redstack/core";
-import { Chest, HopperLine, SupplyChest } from "@redstack/stdlib";
+import { Chest, HopperLine, ShulkerLoader, SupplyChest } from "@redstack/stdlib";
 import { type Scenario, scenario } from "@redstack/testing";
 import { cactusFarm, cactusRingFarm } from "./cactus-farm.js";
 import { kelpFarm } from "./kelp-farm.js";
@@ -120,6 +120,31 @@ export function kelpTwinScenario(): Scenario {
   });
 }
 
+/**
+ * Shulker loader: three chests of cobblestone feed a hopper line into the
+ * loader; full boxes go into a chest. Counted: cobblestone inside the boxes.
+ */
+export function shulkerLoaderScenario(): Scenario {
+  const r = assembly("shulker-loader", (f) => {
+    const loader = f.add(ShulkerLoader).at([0, 0, 0]);
+    const line = f.add(HopperLine({ length: 3, exit: "down" }));
+    line.attach("out", loader.port("in"));
+    for (let i = 0; i < 3; i++) f.connect(f.add(SupplyChest).offsetFrom(line, [0, 1, -i]).port("out"), line.port("in"));
+    f.connect(loader.port("out"), f.add(Chest).at([0, -2, 2]).port("in"));
+  }).resolve();
+  const supplies = [...r.instances.values()].filter((i) => i.template.typeName === "SupplyChest").map((i) => i.origin);
+  return scenario(r, {
+    durationTicks: 3 * 14_000,
+    sampleEveryTicks: 2_000,
+    actions: [
+      ...supplies.map((at) => ({ type: "insert" as const, at, item: "minecraft:cobblestone", count: 27 * 64 })),
+      { type: "insert", at: [0, 2, 0], item: "minecraft:shulker_box", count: 4, stack: 1 },
+    ],
+    measure: { items: ["minecraft:cobblestone", "minecraft:shulker_box"] },
+    expectations: [{ type: "matches-flow-model", tolerance: 0.05 }, { type: "no-ground-items" }],
+  });
+}
+
 /** Survival measurement: 24 cactus columns, 4 in-game hours, 3 runs. */
 function cactusSurvival(design: "row" | "ring", breaker: "fence" | "glass"): Scenario {
   const farm = design === "row" ? cactusFarm(24, breaker) : cactusRingFarm(24, breaker);
@@ -146,6 +171,7 @@ export function cactusFarm16(): Scenario {
 export const scenarios: Record<string, () => Scenario> = {
   "hopper-line-throughput": hopperLineThroughput,
   "hopper-collector": hopperCollector,
+  "shulker-loader": shulkerLoaderScenario,
   "kelp-farm": () => kelpFarmScenario(),
   "kelp-farm-mirrored": () => kelpFarmScenario(true),
   "kelp-twin": kelpTwinScenario,

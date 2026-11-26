@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { describe, it } from "node:test";
 import { B, M, assembly, billOfMaterials, component, formatBlock, runChecks } from "@redstack/core";
-import { defaultResourcePackPath, meshGlb, nucleationReader, nucleationWriter, registry, schematicComponent } from "./index.js";
+import { defaultResourcePackPath, meshGlb, nucleationReader, nucleationWriter, registry, schematicComponent, toNucleationSchematic } from "./index.js";
 
 const Probe = component({ name: "Probe" }, (c) => {
   const h = c.block(B.hopper().outputTo("forward"));
@@ -73,5 +73,19 @@ describe("3D mesh", { skip: !existsSync(defaultResourcePackPath()) && "resource 
   it("produces a binary glTF", () => {
     const glb = meshGlb(assembly("p", (f) => void f.add(Probe)).resolve());
     assert.equal(Buffer.from(glb.subarray(0, 4)).toString("ascii"), "glTF");
+  });
+});
+
+describe("container contents", () => {
+  it("are written into the schematic as block-entity NBT", () => {
+    const a = assembly("filter", (f) => void f.block(B.hopper().containing(["minecraft:stone", 18], ["minecraft:stick", 4])).at([0, 0, 0])).resolve();
+    const s = toNucleationSchematic(a);
+    try {
+      const be = JSON.parse(s.getAllBlockEntitiesSnbtJson()) as Array<{ snbt: string }>;
+      assert.match(be[0]!.snbt, /Slot:0B,count:18,id:"minecraft:stone"/);
+      assert.match(be[0]!.snbt, /Slot:1B,count:4,id:"minecraft:stick"/);
+    } finally {
+      s.clearContents();
+    }
   });
 });

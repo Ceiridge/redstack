@@ -13,6 +13,7 @@ import {
   type Vec3,
   component,
   formatBlock,
+  itemsSnbt,
 } from "@redstack/core";
 import { Schematic } from "nucleation";
 
@@ -34,7 +35,11 @@ export function toNucleationSchematic(assembly: ResolvedAssembly, meta: { author
   const s = Schematic.create(assembly.name);
   if (meta.author) s.setAuthor(meta.author);
   if (meta.description) s.setDescription(meta.description);
-  for (const b of assembly.blocks.values()) s.setBlockFromString(b.pos[0], b.pos[1], b.pos[2], formatBlock(b.block));
+  for (const b of assembly.blocks.values()) {
+    // Container contents ride along as block-entity NBT: minecraft:hopper[…]{Items:[…]}
+    const nbt = b.block.items?.length ? itemsSnbt(b.block.items) : "";
+    s.setBlockFromString(b.pos[0], b.pos[1], b.pos[2], formatBlock(b.block) + nbt);
+  }
   return s;
 }
 

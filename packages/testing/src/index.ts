@@ -44,7 +44,8 @@ export interface TestWorld {
 
 /** Preparation actions. Positions in assembly coordinates. More (chunk reload) will follow. */
 export type Action =
-  | { readonly type: "insert"; readonly at: Vec3; readonly item: string; readonly count: number }
+  /** Fills slots from 0 on, `stack` items per slot (default 64; 1 for shulker boxes, tools …) */
+  | { readonly type: "insert"; readonly at: Vec3; readonly item: string; readonly count: number; readonly stack?: number }
   | { readonly type: "wait"; readonly ticks: number }
   /**
    * Replaces a block, with updates to its direct neighbours only. To flip a

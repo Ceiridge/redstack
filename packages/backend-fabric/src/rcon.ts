@@ -7,6 +7,8 @@ import { Socket } from "node:net";
 
 const TYPE_AUTH = 3;
 const TYPE_COMMAND = 2;
+/** An unknown packet type: the server answers it after the reply to the previous command is complete */
+const TYPE_SENTINEL = 200;
 
 interface Packet {
   id: number;
@@ -29,7 +31,10 @@ export class Rcon {
   readonly #socket: Socket;
   #buffer = Buffer.alloc(0);
   #nextId = 1;
-  #pending = new Map<number, { resolve: (s: string) => void; reject: (e: Error) => void; parts: string[] }>();
+  /** `single`: the reply is one packet (authentication), no sentinel */
+  #pending = new Map<number, { resolve: (s: string) => void; reject: (e: Error) => void; parts: string[]; single?: boolean }>();
+  /** sentinel id → command id whose reply it completes */
+  #sentinels = new Map<number, number>();
   #queue: Promise<unknown> = Promise.resolve();
 
   private constructor(socket: Socket) {
@@ -54,19 +59,26 @@ export class Rcon {
     });
     const rcon = new Rcon(socket);
     const id = rcon.#nextId++;
-    const auth = new Promise<string>((resolve, reject) => rcon.#pending.set(id, { resolve, reject, parts: [] }));
+    const auth = new Promise<string>((resolve, reject) => rcon.#pending.set(id, { resolve, reject, parts: [], single: true }));
     socket.write(encode({ id, type: TYPE_AUTH, body: password }));
     await auth;
     return rcon;
   }
 
-  /** Runs a command (without leading slash) and returns the reply. */
+  /**
+   * Runs a command (without leading slash) and returns the reply. Long
+   * replies arrive in several packets of at most 4 KiB; a sentinel packet
+   * after the command marks the end, so the parts can be joined.
+   */
   command(cmd: string): Promise<string> {
     const run = () =>
       new Promise<string>((resolve, reject) => {
         const id = this.#nextId++;
+        const sentinel = this.#nextId++;
         this.#pending.set(id, { resolve, reject, parts: [] });
+        this.#sentinels.set(sentinel, id);
         this.#socket.write(encode({ id, type: TYPE_COMMAND, body: cmd }));
+        this.#socket.write(encode({ id: sentinel, type: TYPE_SENTINEL, body: "" }));
       });
     const p = this.#queue.then(run, run);
     this.#queue = p.catch(() => undefined);
@@ -89,10 +101,22 @@ export class Rcon {
         this.#failAll(new Error("RCON: authentication failed."));
         return;
       }
+      const of = this.#sentinels.get(id);
+      if (of !== undefined) {
+        this.#sentinels.delete(id);
+        const p = this.#pending.get(of);
+        this.#pending.delete(of);
+        p?.resolve(p.parts.join(""));
+        continue;
+      }
       const p = this.#pending.get(id);
       if (!p) continue;
-      this.#pending.delete(id);
-      p.resolve(body);
+      if (p.single) {
+        this.#pending.delete(id);
+        p.resolve(body);
+        continue;
+      }
+      p.parts.push(body);
     }
   }
 

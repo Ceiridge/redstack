@@ -15,7 +15,7 @@
  * Server setup: see this package's README.
  */
 
-import { type ResolvedAssembly, type Vec3, add, bounds, formatBlock, key, sub } from "@redstack/core";
+import { type ResolvedAssembly, type Vec3, add, bounds, formatBlock, itemsSnbt, key, sub } from "@redstack/core";
 import { analyzeFlow } from "@redstack/flow";
 import {
   type Capability,
@@ -180,7 +180,8 @@ export class FabricCarpetBackend implements TestBackend {
     const blocks = [...a.blocks.values()].sort((x, y) => x.pos[1] - y.pos[1]);
     for (const b of blocks) {
       const p = w(b.pos);
-      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${s.placement === "strict" ? " strict" : ""}`, /Changed the block/);
+      const nbt = b.block.items?.length ? itemsSnbt(b.block.items) : "";
+      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${nbt}${s.placement === "strict" ? " strict" : ""}`, /Changed the block/);
     }
     // 3. Fake player on a platform, after the blocks: the design may provide its floor
     const afk = w(s.world.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
@@ -197,7 +198,7 @@ export class FabricCarpetBackend implements TestBackend {
     const bot = this.#opts.botName;
     if (s.measure.player) await server.command(`clear ${bot}`);
     for (const act of s.actions) {
-      if (act.type === "insert") await this.#insert(server, w(act.at), act.item, act.count);
+      if (act.type === "insert") await this.#insert(server, w(act.at), act.item, act.count, act.stack ?? 64);
       else if (act.type === "wait") await server.sprint(act.ticks);
       else if (act.type === "set") await server.ok(`setblock ${w(act.at).join(" ")} ${act.block}`, /Changed the block/);
       else if (act.type === "use") await this.#use(server, a, act.at, act.from ?? standingCell(a, act.at), afk);
@@ -306,25 +307,39 @@ export class FabricCarpetBackend implements TestBackend {
     if (block) this.#opts.log?.(`used ${block.block.id} at (${at.join(",")}) from (${from.join(",")})`);
   }
 
-  async #insert(server: Server, pos: Vec3, item: string, count: number): Promise<void> {
+  async #insert(server: Server, pos: Vec3, item: string, count: number, stack: number): Promise<void> {
     let left = count;
     for (let slot = 0; left > 0; slot++) {
       if (slot >= 54) throw new Error(`insert: ${count} × ${item} does not fit into the container at (${pos.join(",")}).`);
-      const n = Math.min(64, left);
+      const n = Math.min(stack, left);
       await server.ok(`item replace block ${pos.join(" ")} container.${slot} with ${item} ${n}`, /Replaced/);
       left -= n;
     }
   }
 
+  /**
+   * Item counts across containers, items inside shulker boxes included: one
+   * `data get block` per container, every {count, id} entry in it summed.
+   */
   async #countStored(server: Server, sinks: readonly Vec3[], items: readonly string[]): Promise<Record<string, number>> {
-    const out: Record<string, number> = {};
-    for (const item of [...items, ITEM_ALL]) {
-      let sum = 0;
-      for (const p of sinks) sum += await server.count(`execute if items block ${p.join(" ")} container.* ${item}`);
-      out[item] = sum;
+    const out: Record<string, number> = Object.fromEntries([...items, ITEM_ALL].map((i) => [i, 0]));
+    for (const p of sinks) {
+      const r = await server.command(`data get block ${p.join(" ")} Items`);
+      for (const [id, n] of countItemsInSnbt(r)) {
+        out[ITEM_ALL]! += n;
+        if (id in out) out[id]! += n;
+      }
     }
     return out;
   }
+}
+
+/**
+ * Every item entry in `/data get` output, nested container contents included:
+ * `{count: 64, Slot: 0b, id: "minecraft:stone"}` and `item: {count: 64, id: "…"}`.
+ */
+export function countItemsInSnbt(text: string): Array<[string, number]> {
+  return [...text.matchAll(/count: (\d+)(?:, Slot: -?\d+b)?, id: "([^"]+)"/g)].map((m) => [m[2]!, Number(m[1])]);
 }
 
 const FACING: Readonly<Record<string, Vec3>> = {

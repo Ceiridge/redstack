@@ -63,7 +63,7 @@ const snbtString = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\
  */
 export function toStructureSnbt(
   a: ResolvedAssembly,
-  opts: { readonly items?: ReadonlyArray<{ at: Vec3; item: string; count: number }>; readonly ground?: number } = {},
+  opts: { readonly items?: ReadonlyArray<{ at: Vec3; item: string; count: number; stack?: number }>; readonly ground?: number } = {},
 ): { snbt: string; offset: Vec3 } {
   const box = bounds(a);
   const groundY = opts.ground;
@@ -87,7 +87,7 @@ export function toStructureSnbt(
     }
     return i;
   };
-  const items = new Map<string, Array<{ item: string; count: number }>>();
+  const items = new Map<string, Array<{ item: string; count: number; stack?: number }>>();
   for (const x of opts.items ?? []) items.set(key(x.at), [...(items.get(key(x.at)) ?? []), x]);
   const rel = (p: Vec3) => sub(p, offset);
   const lines: string[] = [];
@@ -99,9 +99,11 @@ export function toStructureSnbt(
     let nbt = "";
     if (CONTAINER_IDS.test(b.block.id)) {
       const stacks: string[] = [];
-      let slot = 0;
+      for (const it of b.block.items ?? []) stacks.push(`{Slot: ${it.slot}b, id: ${snbtString(it.id)}, count: ${it.count}}`);
+      let slot = Math.max(-1, ...(b.block.items ?? []).map((it) => it.slot)) + 1;
       for (const x of items.get(key(b.pos)) ?? []) {
-        for (let left = x.count; left > 0; left -= 64) stacks.push(`{Slot: ${slot++}b, id: ${snbtString(x.item)}, count: ${Math.min(64, left)}}`);
+        const per = x.stack ?? 64;
+        for (let left = x.count; left > 0; left -= per) stacks.push(`{Slot: ${slot++}b, id: ${snbtString(x.item)}, count: ${Math.min(per, left)}}`);
       }
       nbt = `, nbt: {id: ${snbtString(b.block.id)}, Items: [${stacks.join(", ")}]}`;
     }
@@ -149,7 +151,7 @@ export class McTickBackend implements TestBackend {
     if (!existsSync(binary)) throw new Error(`mc-tick tool not built: ${binary} (run pnpm mctick:build).`);
 
     const a = s.assembly;
-    const inserts = s.actions.flatMap((x) => (x.type === "insert" ? [{ at: x.at, item: x.item, count: x.count }] : []));
+    const inserts = s.actions.flatMap((x) => (x.type === "insert" ? [{ at: x.at, item: x.item, count: x.count, ...(x.stack ? { stack: x.stack } : {}) }] : []));
     const { snbt, offset } = toStructureSnbt(a, {
       items: inserts,
       ...(s.world.terrain === "flat" ? { ground: s.world.groundY ?? bounds(a).min[1] - 1 } : {}),
