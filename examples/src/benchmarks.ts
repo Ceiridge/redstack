@@ -118,11 +118,10 @@ export function kelpV2Benchmark(lever = false): Scenario {
     placement: process.env["REDSTACK_PLACEMENT"] === "updates" ? "with-updates" : "strict",
     actions: [
       ...[5, 6, 7, 8].map((x) => ({ type: "insert" as const, at: [x, 9, 3] as Vec3, item: "minecraft:bone_block", count: 27 * 64 })),
-      ...(lever ? [{ type: "use" as const, at: [11, 9, 10] as Vec3 }, { type: "use" as const, at: [12, 9, 11] as Vec3 }] : []),
-      // Once bone meal has reached the dispensers, kick the observer clock:
-      // retuning the note block it watches gives it a pulse
-      { type: "wait", ticks: 3_000 },
-      { type: "set", at: [9, 2, 3], block: "minecraft:note_block[instrument=basedrum,note=2,powered=false]" },
+      // The lever at (12,3,18) powers the note block of the kelp clock through a
+      // repeater and so holds the clock; saved switched on, i.e. the farm off
+      // The levers at (11,9,10) and (12,9,11) switch the bone meal crafters on
+      ...(lever ? ([[12, 3, 18], [11, 9, 10], [12, 9, 11]] as Vec3[]).map((at) => ({ type: "use" as const, at })) : []),
     ],
     measure: { containers: positionsOf(a.blocks.values(), "minecraft:chest"), items: KELP_ITEMS },
   });
@@ -133,21 +132,20 @@ export function kelpV2Benchmark(lever = false): Scenario {
  * items carried by water, 25 shulker loaders. Raw blocks go into the input
  * chests (the row of double chests at y=8, z=12–13).
  */
-export function slabCrafterBenchmark(lever = false, item = "minecraft:cobbled_deepslate"): Scenario {
+export function slabCrafterBenchmark(lever = false, perHour = 20_000, durationTicks = 12_000, item = "minecraft:cobbled_deepslate"): Scenario {
   const Farm = load("tuff-deepslate-slab-crafter.litematic", "SlabCrafter");
   const a = assembly("slab-crafter", (f) => void f.add(Farm)).resolve();
   const slab = item === "minecraft:tuff" ? "minecraft:tuff_slab" : "minecraft:cobbled_deepslate_slab";
   return scenario(a, {
-    name: lever ? "slab-crafter-lever" : "slab-crafter",
+    name: lever ? `slab-crafter-lever${perHour === 20_000 ? "" : `-${perHour / 1000}k`}` : "slab-crafter",
     requires: ["items", "block-updates", "redstone", "fake-player"],
-    durationTicks: 12_000,
-    warmupTicks: 2_000,
+    durationTicks,
+    warmupTicks: Math.min(6_000, durationTicks / 4),
     sampleEveryTicks: 1_000,
     placement: "strict",
-    actions: [
-      ...Array.from({ length: 6 }, (_, i) => ({ type: "insert" as const, at: [1 + i, 8, 12] as Vec3, item, count: 27 * 64 })),
-      ...(lever ? [{ type: "use" as const, at: [32, 5, 4] as Vec3 }] : []),
-    ],
+    actions: lever ? [{ type: "use" as const, at: [32, 5, 4] as Vec3 }] : [],
+    // Raw blocks thrown into the start of the top lanes, next to the waterlogged chest that is their source
+    feeds: [{ at: [21, 8, 1], item, perHour }],
     measure: { containers: positionsOf(a.blocks.values(), "minecraft:chest", "minecraft:shulker_box"), items: [item, slab, "minecraft:shulker_box"] },
   });
 }
@@ -159,6 +157,8 @@ export const scenarios: Record<string, () => Scenario> = {
   "kelp-farm-v2-levers": () => kelpV2Benchmark(true),
   "slab-crafter": () => slabCrafterBenchmark(),
   "slab-crafter-lever": () => slabCrafterBenchmark(true),
+  "slab-crafter-lever-40k": () => slabCrafterBenchmark(true, 40_000, 36_000),
+  "slab-crafter-lever-80k": () => slabCrafterBenchmark(true, 80_000, 24_000),
 };
 
 /** A hopper under a water stream, passing what lands in it straight down. */

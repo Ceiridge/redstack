@@ -41,17 +41,32 @@ run yet.
 Both downloaded by hand, not part of the repository (`examples/benchmarks/`, git-ignored); block entities
 (crafter slots, contents) are now imported too.
 
+Both are fed by throwing items into their water (`feeds` in the benchmarks).
+
 **Kelp farm V2 "4 shulkers of kelp blocks per hour"** by Fsaulpaugh (schemat.io tu7vbz), 17 × 16 × 27, 1,779 blocks,
 saved in data version 4671 (1.21.x). Bone blocks from four double chests → a one-slot crafter makes bone meal →
 four dispensers around one kelp, an observer clock and a piston harvest it → bubble columns and two-wide lichen lanes
 carry the kelp over 2 × 17 hopper pairs into 60 smokers → full-grid crafters press dried kelp blocks → a stream and a
-bubble column carry them to storage. On 26.3 it has not produced kelp yet: the crafters make bone meal, the
-dispensers fill, but the kelp clock never runs (tried strict placement and placement with updates, the levers, and a
-pulse on the note block the clock watches); surplus bone meal spills. Whether that is the version, the start
-procedure or our placement is open.
+bubble column carry them to storage. Switches: the lever at (12, 3, 18) holds the kelp clock (it powers the
+clock's note block through a repeater; saved on = farm off), the levers at (11, 9, 10) and (12, 9, 11) switch the
+bone meal crafter. With all three flipped the clock runs and the dispensers fire, but no kelp grows: the cell above
+the kelp is air after every harvest – the piston fires before the water from above has flowed back (5 ticks), the
+failure the donut.build kelp farm shows with two pulses in its clock. Bone meal backs up and spills. Not solved;
+it may depend on the exact start state or on the version (the file is from 1.21.x).
 
 **Mauschu's Tuff and Deepslate Slab Crafter** (shulkr.com; design Mauschu, schematic Shadow), 48 × 9 × 23,
 2,791 blocks, data version 5023 (26.3). 100 crafters with only the top row enabled (three blocks → six slabs), fed
 from two-wide pane lanes over hopper rows and chests; the slabs drop into a water lane, a bubble column lifts them
-into a serpentine stream over 25 shulker loaders. Not running yet either: where the raw blocks go in is not clear
-from the blocks (the double chests at y = 8, z = 12–13 feed the loader side, not the crafters).
+into a serpentine stream over 25 shulker loaders. Raw blocks are thrown into the start of the top lanes (next to the
+waterlogged chest at (20, 8, 1)); the lever at (32, 5, 4) switches it on (off: the blocks are distributed, nothing is
+crafted).
+
+| Fed (cobbled deepslate) | Slabs into boxes and chests | Notes |
+|---|---|---|
+| 20,000/h, 10 min | 16,600/h | 38 items on the ground |
+| 40,000/h, 30 min | 24,400/h | 50 hoppers backed up |
+| 80,000/h, 20 min | 41,600/h, falling | 65 hoppers backed up, 1,500 items fall out below |
+
+The limit is the slab stream over the loaders, the same trap as in the experiment above: only the loader
+hoppers of the first two rows are full (z = 4 and 8), the three rows after them get almost nothing – items lie in
+the bowls of the full hoppers instead of floating on. 100 crafters could press far more (three blocks per craft).
