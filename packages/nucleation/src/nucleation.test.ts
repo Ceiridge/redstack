@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { describe, it } from "node:test";
 import { B, M, assembly, billOfMaterials, component, formatBlock, runChecks } from "@redstack/core";
-import { defaultResourcePackPath, meshGlb, nucleationReader, nucleationWriter, registry, schematicComponent, toNucleationSchematic } from "./index.js";
+import {
+  blockEntityFields,
+  defaultResourcePackPath,
+  meshGlb,
+  nucleationReader,
+  nucleationWriter,
+  registry,
+  schematicComponent,
+  toNucleationSchematic,
+} from "./index.js";
 
 const Probe = component({ name: "Probe" }, (c) => {
   const h = c.block(B.hopper().outputTo("forward"));
@@ -87,5 +96,39 @@ describe("container contents", () => {
     } finally {
       s.clearContents();
     }
+  });
+});
+
+describe("block entities on import", () => {
+  it("come back as contents and fields after a litematic round trip", () => {
+    const a = assembly("be", (f) => {
+      f.block(B.hopper().containing(["minecraft:stone", 18], ["minecraft:stick", 4])).at([0, 0, 0]);
+      f.block(B.of("minecraft:crafter", { orientation: "south_up", triggered: false, crafting: false }).withData({ disabled_slots: "[I;3,4,5,6,7,8]" })).at([2, 0, 0]);
+    }).resolve();
+    const { bytes } = nucleationWriter.write(a, { format: "litematic" });
+    const Imported = schematicComponent({ name: "Imported", bytes, format: "litematic" });
+    const r = assembly("re", (f) => void f.add(Imported).at([0, 0, 0])).resolve();
+    const blocks = [...r.blocks.values()];
+    const hopper = blocks.find((b) => b.block.id === "minecraft:hopper")!;
+    assert.deepEqual(
+      hopper.block.items?.map((i) => [i.slot, i.id, i.count]),
+      [
+        [0, "minecraft:stone", 18],
+        [1, "minecraft:stick", 4],
+      ],
+    );
+    const crafter = blocks.find((b) => b.block.id === "minecraft:crafter")!;
+    assert.equal(crafter.block.data?.["disabled_slots"]?.replace(/\s/g, ""), "[I;3,4,5,6,7,8]");
+  });
+
+  it("parses SNBT: plain lists of slots become int arrays, transient state is dropped, items with components stay raw", () => {
+    const f = blockEntityFields('{components:{},disabled_slots:[3,4,5],triggered:0,x:1,y:2,z:3,TransferCooldown:0}');
+    assert.deepEqual(f, { items: [], data: { disabled_slots: "[I;3,4,5]" } });
+    const g = blockEntityFields('{Items:[{Slot:0b,id:"minecraft:shulker_box",count:1,components:{"minecraft:container":[{slot:0,item:{id:"minecraft:stone",count:64}}]}}],Lock:{}}');
+    assert.equal(g.items.length, 0);
+    assert.match(g.data["Items"]!, /minecraft:container/);
+    const h = blockEntityFields('{Items:[{Slot:2b,id:"minecraft:kelp",count:30}],CustomName:"a, b"}');
+    assert.deepEqual(h.items, [{ slot: 2, id: "minecraft:kelp", count: 30 }]);
+    assert.equal(h.data["CustomName"], '"a, b"');
   });
 });

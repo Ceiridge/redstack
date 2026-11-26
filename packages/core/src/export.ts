@@ -29,5 +29,6 @@ export interface SchematicWriter {
 export interface SchematicReader {
   readonly id: string;
   /** Reads a file as a flat block list – the basis for importing proven designs. */
-  read(bytes: Uint8Array, format: SchematicFormat): ReadonlyArray<{ pos: readonly [number, number, number]; block: string }>;
+  /** `nbt`: the block entity as SNBT (contents, crafter slots, …), if the block has one */
+  read(bytes: Uint8Array, format: SchematicFormat): ReadonlyArray<{ pos: readonly [number, number, number]; block: string; nbt?: string }>;
 }
