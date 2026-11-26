@@ -103,7 +103,11 @@ export function toStructureSnbt(
       let slot = Math.max(-1, ...(b.block.items ?? []).map((it) => it.slot)) + 1;
       for (const x of items.get(key(b.pos)) ?? []) {
         const per = x.stack ?? 64;
-        for (let left = x.count; left > 0; left -= per) stacks.push(`{Slot: ${slot++}b, id: ${snbtString(x.item)}, count: ${Math.min(per, left)}}`);
+        // "minecraft:shulker_box[container=[…]]" carries its contents as a component
+        const m = /^([^[]+)\[container=(\[.*\])\]$/.exec(x.item);
+        const id = m ? m[1]! : x.item;
+        const comp = m ? `, components: {"minecraft:container": ${m[2]}}` : "";
+        for (let left = x.count; left > 0; left -= per) stacks.push(`{Slot: ${slot++}b, id: ${snbtString(id)}, count: ${Math.min(per, left)}${comp}}`);
       }
       nbt = `, nbt: {id: ${snbtString(b.block.id)}, Items: [${stacks.join(", ")}]}`;
     }

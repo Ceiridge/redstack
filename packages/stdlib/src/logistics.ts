@@ -30,6 +30,18 @@ export const Chest = component(
   },
 );
 
+/** Double chest as storage (54 slots); input into either half. */
+export const DoubleChest = component(
+  { name: "DoubleChest", description: "Double chest as storage (54 slots).", status: "game-tested", params: { stackSize: 64 } },
+  (c, { stackSize }) => {
+    // facing south: the left half (seen from the front) is the east one
+    const a = c.block(B.chest().with({ facing: "south", type: "right" })).at([0, 0, 0]);
+    const b = c.block(B.chest().with({ facing: "south", type: "left" })).at([1, 0, 0]);
+    c.input("in", [a, b]);
+    c.stores("in", 54 * stackSize, "game-mechanic", `54 slots × ${stackSize}`);
+  },
+);
+
 /**
  * A chest that hoppers below it can pull from, refilled from outside the farm
  * (by a player, or by a test). Its rate is the most it can deliver; the

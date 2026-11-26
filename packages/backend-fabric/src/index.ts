@@ -308,6 +308,10 @@ export class FabricCarpetBackend implements TestBackend {
   }
 
   async #insert(server: Server, pos: Vec3, item: string, count: number, stack: number): Promise<void> {
+    // RCON accepts at most 1,446 bytes per command; ids inside item components
+    // (a filled shulker box) are written without the default namespace
+    const bracket = item.indexOf("[");
+    if (bracket > 0) item = item.slice(0, bracket) + item.slice(bracket).replaceAll('"minecraft:', '"');
     let left = count;
     for (let slot = 0; left > 0; slot++) {
       if (slot >= 54) throw new Error(`insert: ${count} × ${item} does not fit into the container at (${pos.join(",")}).`);

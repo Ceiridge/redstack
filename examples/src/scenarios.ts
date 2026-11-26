@@ -4,7 +4,7 @@
  */
 
 import { B, assembly } from "@redstack/core";
-import { Chest, HopperLine, ShulkerLoader, SupplyChest } from "@redstack/stdlib";
+import { Chest, DoubleChest, HopperLine, ShulkerLoader, ShulkerUnloader, SupplyChest, filledShulker } from "@redstack/stdlib";
 import { type Scenario, scenario } from "@redstack/testing";
 import { cactusFarm, cactusRingFarm } from "./cactus-farm.js";
 import { kelpFarm } from "./kelp-farm.js";
@@ -145,6 +145,27 @@ export function shulkerLoaderScenario(): Scenario {
   });
 }
 
+/** Shulker unloader: two full boxes in, items (and empty boxes) out into a double chest. */
+export function shulkerUnloaderScenario(): Scenario {
+  const r = assembly("shulker-unloader", (f) => {
+    const unloader = f.add(ShulkerUnloader).at([0, 0, 0]);
+    unloader.to(DoubleChest);
+  }).resolve();
+  const chest = r.instances.get("DoubleChest#1")!;
+  return scenario(r, {
+    durationTicks: 2 * 14_000,
+    sampleEveryTicks: 2_000,
+    actions: [
+      { type: "insert", at: [0, 2, 0], item: filledShulker("minecraft:cobblestone"), count: 2, stack: 1 },
+      // Let the hopper hand the boxes to the dispenser, then start it
+      { type: "wait", ticks: 40 },
+      { type: "use", at: [-1, 1, -1] },
+    ],
+    measure: { items: ["minecraft:cobblestone", "minecraft:shulker_box"], containers: chest.ports.get("in")!.absCells },
+    expectations: [{ type: "rate-at-least", item: "minecraft:cobblestone", perHour: 8_500 }, { type: "no-ground-items" }],
+  });
+}
+
 /** Survival measurement: 24 cactus columns, 4 in-game hours, 3 runs. */
 function cactusSurvival(design: "row" | "ring", breaker: "fence" | "glass"): Scenario {
   const farm = design === "row" ? cactusFarm(24, breaker) : cactusRingFarm(24, breaker);
@@ -172,6 +193,7 @@ export const scenarios: Record<string, () => Scenario> = {
   "hopper-line-throughput": hopperLineThroughput,
   "hopper-collector": hopperCollector,
   "shulker-loader": shulkerLoaderScenario,
+  "shulker-unloader": shulkerUnloaderScenario,
   "kelp-farm": () => kelpFarmScenario(),
   "kelp-farm-mirrored": () => kelpFarmScenario(true),
   "kelp-twin": kelpTwinScenario,

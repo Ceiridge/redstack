@@ -104,3 +104,82 @@ export const ShulkerLoader = component(
     void SHULKER_SLOTS;
   },
 );
+
+/** An item string for a shulker box filled with `count` of `item` (64 per slot), e.g. for test inserts. */
+export function filledShulker(item: string, count = SHULKER_SLOTS * 64, box = "minecraft:shulker_box"): string {
+  const slots: string[] = [];
+  for (let i = 0, left = count; left > 0; i++, left -= 64) slots.push(`{slot:${i},item:{id:"${item}",count:${Math.min(64, left)}}}`);
+  return `${box}[container=[${slots.join(",")}]]`;
+}
+
+/**
+ * Shulker box unloader: a dispenser places a full box, a hopper below empties
+ * it, and when it is empty a piston breaks it; the empty box drops into the
+ * same output as the items. Then the dispenser places the next full box.
+ *
+ * Empty detection without a false start: an observer watches the comparator
+ * that reads the box; its pulse reaches the piston only through a repeater
+ * that this comparator locks while the box still holds items. So "box just
+ * became empty" fires, "new full box placed" does not.
+ *
+ * Inputs: `boxes` (full shulker boxes, into the top of the dispenser's
+ * hopper). Output: `out` – the items, and the empty boxes. Start it once with
+ * the button. Speed: one hopper, 9,000 items/h.
+ *
+ * Measured (Fabric, 26.3): two boxes emptied back to back, 8,700 items/h,
+ * both empty boxes in the output, nothing lost.
+ */
+export const ShulkerUnloader = component(
+  {
+    name: "ShulkerUnloader",
+    description: "Empties full shulker boxes into a hopper and breaks the empty box. Input: boxes. Output: out (items and empty boxes).",
+    status: "game-tested",
+    params: {},
+  },
+  (c) => {
+    const solid = () => B.of(c.material(M.solid));
+    const wire = () => B.of("minecraft:redstone_wire", {});
+    c.keepClear([0, 0, 0], [0, 0, -1]);
+    const dispenser = c.block(B.of("minecraft:dispenser", { facing: "down", triggered: false })).at([0, 1, 0]);
+    const boxHopper = c.block(B.hopper().outputTo("down")).at([0, 2, 0]);
+    // Unloading hopper below the box, collector below the push target
+    c.block(B.hopper().outputTo("north")).at([0, -1, 0]);
+    const q = c.block(B.hopper().outputTo("down")).at([0, -1, -1]);
+    // Piston south of the box, pushing north
+    c.block(B.piston().pushing("north")).at([0, 0, 1]);
+
+    // Comparator reads the box and locks the repeater beside it while the box has items
+    c.block(B.comparator("compare").signalTowards("east")).at([1, 0, 0]);
+    c.block(solid()).at([1, -1, 0]);
+    c.block(B.repeater(1).signalTowards("south")).at([2, 0, 0]);
+    c.block(solid()).at([2, -1, 0]);
+    // Observer watches the comparator; its pulse runs round to the repeater's input
+    c.block(B.observer().watching("south")).at([1, 0, -1]);
+    for (const p of [[1, 0, -2], [2, 0, -2], [2, 0, -1]] as const) {
+      c.block(wire()).at(p);
+      c.block(solid()).at([p[0], -1, p[2]]);
+    }
+    // Repeater → dust → repeater into the piston
+    c.block(wire()).at([2, 0, 1]);
+    c.block(solid()).at([2, -1, 1]);
+    c.block(B.repeater(1).signalTowards("west")).at([1, 0, 1]);
+    c.block(solid()).at([1, -1, 1]);
+    // The observer's pulse also re-arms the dispenser, 8 game ticks later
+    c.block(wire()).at([1, 0, -3]);
+    c.block(solid()).at([1, -1, -3]);
+    c.block(wire()).at([0, 1, -3]);
+    c.block(solid()).at([0, 0, -3]);
+    c.block(B.repeater(4).signalTowards("south")).at([0, 1, -2]);
+    c.block(solid()).at([0, 0, -2]);
+    c.block(solid()).at([0, 1, -1]);
+    // Start button on that block: powering the dispenser itself would also
+    // power the piston (quasi-connectivity through the dispenser) and break the first box
+    c.block(B.of("minecraft:stone_button", { face: "wall", facing: "west", powered: false })).at([-1, 1, -1]);
+
+    c.input("boxes", boxHopper, { description: "full shulker boxes" });
+    c.output("out", q.down, { description: "the items, and the empty boxes" });
+    c.passes("boxes", "out", hopperItemsPerHour(c.env), "game-mechanic", "one unloading hopper; counts the items inside the boxes");
+    c.note("Press the button once to place the first box.");
+    void dispenser;
+  },
+);
