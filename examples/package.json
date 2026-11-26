@@ -17,7 +17,8 @@
     "@redstack/stdlib": "workspace:*",
     "@redstack/testing": "workspace:*",
     "@redstack/flow": "workspace:*",
-    "@redstack/viz": "workspace:*"
+    "@redstack/viz": "workspace:*",
+    "@redstack/nucleation": "workspace:*"
   },
   "license": "MIT"
 }

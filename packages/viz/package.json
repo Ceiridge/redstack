@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@redstack/core": "workspace:*",
-    "@redstack/flow": "workspace:*"
+    "@redstack/flow": "workspace:*",
+    "@redstack/nucleation": "workspace:*"
   },
   "license": "MIT"
 }

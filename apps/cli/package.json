@@ -15,7 +15,7 @@
   "dependencies": {
     "@redstack/core": "workspace:*",
     "@redstack/flow": "workspace:*",
-    "@redstack/export-nucleation": "workspace:*",
+    "@redstack/nucleation": "workspace:*",
     "@redstack/viz": "workspace:*",
     "@redstack/testing": "workspace:*",
     "@redstack/backend-fabric": "workspace:*"

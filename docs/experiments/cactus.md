@@ -46,7 +46,36 @@ The 16-cell example farm (different size than the calibration runs):
 |---|---|
 | 44.8/h | 45.0/h (and 45.2/h on the second server) |
 
+## 5. Third design: shared breakers, one hopper bed (CactusRow)
+
+Idea (from review): at a pitch of 2 instead of 3, neighbouring cacti can share the fence between their growth cells, and the hopper rings overlap anyway. The rings merge into one continuous hopper bed whose right column is the belt itself, so the separate belt layer disappears.
+
+| | Ring (CactusCell) | Row (CactusSlice) |
+|---|---|---|
+| Length per cactus | 3 blocks | 2 blocks |
+| Hoppers per cactus | 11 (8 ring + 3 belt) | 5 |
+| Blocks for 16 cacti | 239 | 148 |
+
+Static checks first (unit tests): every hopper of the bed leads to the chest, block states valid against the Minecraft block table, 5 hoppers per cactus.
+
+In-game, 3 runs × 24 columns × 4 in-game hours each:
+
+| Design | Breaker | Measured | Survival | Server time per tick |
+|---|---|---|---|---|
+| Row | fence | 66.7/h ± 2.4 | **0.84** | 0.082 ms |
+| Row | glass | 51.1/h ± 1.9 | **0.65** | 0.081 ms |
+| Ring | fence (repeat) | 69.6/h ± 1.6 | 0.88 | 0.094 ms |
+
+- The row collects about 4 % less than the ring (1.7 σ – possibly noise, possibly the denser layout), with half the hoppers, a third less length and ~13 % less server time.
+- Glass is much worse in the row than in the ring: a full block on *both* sides of the growth cell sends more items back onto the cactus.
+- One run of the row lost a single item out of ~800. The backend now reports the position of ground items to find such leaks.
+
+Independent check: the 16-cell row farm, model 44.3/h after calibration (44.8/h with the borrowed ring value) – measured 44.7/h.
+
+`CactusRow` is the recommended design; `CactusCell` stays for comparison. The ring's fence value is now the mean of six runs (0.87).
+
 ## Open questions
 - Water-based collection instead of a hopper ring (cheaper, less lag)?
 - Do Paper's growth modifiers or a server's random tick settings change the result? (`growthModifier`, `randomTickSpeed` parameters exist; not measured yet.)
-- Cells sharing ring hoppers to save material.
+- ~~Cells sharing ring hoppers to save material.~~ Done: CactusRow.
+- Where exactly does the row lose its ~16 %? Ground-item positions are reported now; destroyed items are not visible yet.

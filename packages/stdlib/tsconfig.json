@@ -10,6 +10,12 @@
   "references": [
     {
       "path": "../../packages/core"
+    },
+    {
+      "path": "../flow"
+    },
+    {
+      "path": "../nucleation"
     }
   ]
 }

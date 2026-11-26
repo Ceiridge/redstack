@@ -25,19 +25,24 @@ Each level checks the next: measurements calibrate the components' rate models, 
 
 Each phase has an exit criterion. A phase is done when it is met.
 
-### Phase 0 – Evaluate Nucleation ✅ (except one in-game check)
+### Phase 0 – Evaluate Nucleation ✅
 - [x] Write `.litematic` via npm, check block states and rotations by round trip
 - [x] Independent cross-check with litemapy (older format, data version 4903): all blocks identical
-- [ ] **Open: load a file in Litematica 26.3.** From data version 5006 Nucleation writes the palette as `{id, properties}` instead of `{Name, Properties}`; according to Nucleation this is the 26.3 format. Not independently confirmed. Needs a game client.
+- [x] Loaded in Litematica's web preview (26.3 format) by the project owner
+- Findings on the npm build (0.12.3): block table, schematic I/O and GLB meshing work; the PNG renderer and the simulations (MCHPRS, mc-tick) are not included. The Python wheel has them, but rendering needs a GPU and reading container contents after an mc-tick run did not work in a first attempt.
 
-### Phase 1 – Core ✅
+### Phase 1 – Core ✅ (API v2)
 - [x] Geometry with relative directions and rotation
 - [x] Block states with semantic helpers and rotation of all direction-dependent properties
 - [x] Components placed by relations, typed ports (items, fluid, signal, bus), reserved cells
 - [x] Assemblies: docking via ports (`attach`), rows, connections
 - [x] Static checks
+- [x] One concept: components nest; `to()` docking, `expose`, `line`/`fill`, `keepClear`, callable component types
+- [x] Materials with tags (vanilla and `#redstack:*`), overrides per assembly, checked against the block table
+- [x] Block-state validation against Minecraft's block data (via Nucleation)
+- [x] Environments (version, platform, server settings) with presets
+- [x] Importing schematics as components (`schematicComponent`), `redstack inspect`
 - [ ] Mirroring components
-- [ ] Importing proven schematics as components (the reader exists)
 
 ### Phase 2 – Flow model ✅
 - [x] Rates per port, bottlenecks, fill times, inputs, lost items, dead ends
@@ -60,7 +65,10 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [x] RCON control, frozen game + `tick sprint`, sampling against actual game time
 - [x] Carpet fake player for random ticks, catch floor for lost items, backed-up hopper detection
 - [x] `redstack test`, JSON reports, comparison against the flow model
-- [x] First components game-tested: HopperLine, Chest, SupplyChest, CactusCell
+- [x] First components game-tested: HopperLine, Chest, SupplyChest, CactusCell, CactusRow
+- [x] Server time per tick (lag) per run; positions of lost items
+- [x] Backends declare which environments they cannot reproduce
+- [ ] mc-tick (Nucleation) as a fast backend for redstone and item logistics – needs container read-out
 - [ ] Use the vanilla GameTest framework for component tests
 - [ ] Several server processes in parallel; container without network for the server
 - [ ] Chunk reload and server restart as test actions
@@ -73,13 +81,15 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [x] Data model (`viz`): blocks, instances, flows, utilisation, highlighted spots
 - [x] Isometric SVG renderer (no dependencies, flat colours), hopper directions, flow labels, findings
 - [x] Standalone interactive viewer: rotate, cut away layers, toggle overlays, list of findings (`redstack render -o x.html`)
+- [x] Textured 3D view (Nucleation mesh + three.js), findings as boxes, `#figure` mode for pictures
+- [x] Colours and shapes from block facts instead of a hard-coded table
 - [ ] Events from in-game tests in the viewer, comparison of two runs
-- [ ] Full 3D viewer (candidates: Nucleation renderer, deepslate-based renderers – review first)
 
 **Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
 ### Phase 5 – Standard library and AI loop
-- [ ] 10–20 proven components (rebuilt from archives, respecting licences and credits), each with a test and docs
+- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs
+  - donut.build: its terms forbid scraping and its download endpoint blocks bots, so schematics are downloaded by hand and analysed with `redstack inspect` / `schematicComponent`; originals are not committed
 - [ ] Component docs written for AIs too: ports, rates, limits, known traps
 - [ ] Loop: write → stage 0 → stage 1 → test → repair
 
@@ -106,6 +116,6 @@ Each phase has an exit criterion. A phase is done when it is met.
 - LP solver (phase 2b)
 
 ## Next steps
-1. Litematica load test (needs a PC); make the repository public
+1. Analyse hand-picked donut.build farms (kelp first) and rebuild them as components
 2. Bridge assembly → process, then the optimizer (phase 2b)
 3. More components with tests (phase 5), starting with water-based collection

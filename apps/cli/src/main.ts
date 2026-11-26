@@ -2,41 +2,69 @@
 /**
  * redstack – command line
  *
- *   redstack check <module.js>                static checks
- *   redstack flow  <module.js>                flow model
- *   redstack build <module.js> -o <file>      write a schematic
- *   redstack all   <module.js> -o <file>      everything + visualisation data (.viz.json)
- *   redstack render <module.js> -o <file>     picture (.svg) or interactive viewer (.html)
- *   redstack test  <module.js> [name...]      in-game scenarios (see test-command.ts)
+ *   redstack check   <module.js>               static checks (incl. block states and materials)
+ *   redstack flow    <module.js>               flow model
+ *   redstack build   <module.js> -o <file>     schematic (.litematic / .schem)
+ *   redstack render  <module.js> -o <file>     picture (.svg) or viewer (.html, 3D if assets exist)
+ *   redstack all     <module.js> -o <file>     all of the above
+ *   redstack inspect <file.litematic> [-o x.html]   analyse an existing schematic
+ *   redstack test    <scenarios.js> [name...]  in-game scenarios (see test-command.ts)
  *
- * Options: --format litematic|schem, --data-version <n>, --json, -o <dir> for test reports,
- *          --rotation <0-3>, --title <text> for render
+ * Options: --format litematic|schem, --data-version <n>, --json, --rotation <0-3>, --title <text>, --no-3d
  *
- * For check/flow/build/all, the module's default export is an Assembly or a
- * function returning one.
+ * A module's default export is an Assembly, a component (type or spec), or a
+ * function returning one of those.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { Assembly, type SchematicFormat, formatDiagnostic, hasErrors, runChecks } from "@redstack/core";
-import { nativeDataVersion, nucleationWriter } from "@redstack/export-nucleation";
+import {
+  Assembly,
+  type ComponentSpec,
+  type ComponentType,
+  type ResolvedAssembly,
+  type SchematicFormat,
+  billOfMaterials,
+  bounds,
+  formatDiagnostic,
+  hasErrors,
+  runChecks,
+} from "@redstack/core";
 import { analyzeFlow, formatFlowReport } from "@redstack/flow";
+import { defaultResourcePackPath, formatOf, meshGlb, nativeDataVersion, nucleationWriter, registry, schematicComponent } from "@redstack/nucleation";
 import { toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { testCommand } from "./test-command.js";
 
-async function loadAssembly(path: string): Promise<Assembly> {
-  const mod = (await import(pathToFileURL(resolve(path)).href)) as { default?: unknown };
-  const d = mod.default;
-  const a = typeof d === "function" ? (d as () => unknown)() : d;
-  if (!(a instanceof Assembly)) throw new Error(`${path} does not export an Assembly as default.`);
+type Exported = Assembly | ComponentType<object> | ComponentSpec<object>;
+
+function toAssembly(x: Exported, name: string): Assembly {
+  if (x instanceof Assembly) return x;
+  const a = new Assembly(name);
+  a.add(x as ComponentType<object>);
   return a;
 }
 
+async function loadAssembly(path: string): Promise<Assembly> {
+  const mod = (await import(pathToFileURL(resolve(path)).href)) as { default?: unknown };
+  let d = mod.default;
+  if (typeof d === "function" && !("componentName" in d)) d = (d as () => unknown)();
+  if (d instanceof Assembly || (typeof d === "function" && "componentName" in d) || (typeof d === "object" && d !== null && "type" in d)) {
+    return toAssembly(d as Exported, basename(path).replace(/\.[^.]+$/, ""));
+  }
+  throw new Error(`${path} does not export an Assembly or a component as default.`);
+}
+
 function usage(): never {
-  console.error("usage: redstack <check|flow|build|all|render|test> <module.js> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--json]");
+  console.error("usage: redstack <check|flow|build|render|all|inspect|test> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json]");
   process.exit(2);
+}
+
+/** Viewer HTML, with a textured 3D tab when the resource pack is available. */
+function viewer(resolved: ResolvedAssembly, model: ReturnType<typeof toVizModel>, with3d: boolean): string {
+  if (!with3d || !existsSync(defaultResourcePackPath())) return toHtml(model);
+  return toHtml(model, { glb: meshGlb(resolved) });
 }
 
 async function main(): Promise<void> {
@@ -49,24 +77,51 @@ async function main(): Promise<void> {
       json: { type: "boolean", default: false },
       rotation: { type: "string", default: "0" },
       title: { type: "string" },
+      "no-3d": { type: "boolean", default: false },
     },
   });
-  const [cmd, modPath, ...rest] = positionals;
-  if (!cmd || !modPath || !["check", "flow", "build", "all", "render", "test"].includes(cmd)) usage();
+  const [cmd, target, ...rest] = positionals;
+  const commands = ["check", "flow", "build", "render", "all", "inspect", "test"];
+  if (!cmd || !target || !commands.includes(cmd)) usage();
+  const with3d = !values["no-3d"];
+
   if (cmd === "test") {
-    const passed = await testCommand(modPath, rest, { json: values.json ?? false, outDir: values.out ?? "out/reports" });
+    const passed = await testCommand(target, rest, { json: values.json ?? false, outDir: values.out ?? "out/reports" });
     process.exit(passed ? 0 : 1);
   }
 
-  const assembly = (await loadAssembly(modPath)).resolve();
-  const diags = runChecks(assembly);
+  if (cmd === "inspect") {
+    const name = basename(target).replace(/\.[^.]+$/, "");
+    const Imported = schematicComponent({ name, bytes: new Uint8Array(readFileSync(target)), format: formatOf(target) });
+    const resolved = toAssembly(Imported, name).resolve();
+    const { min, max } = bounds(resolved);
+    const diags = runChecks(resolved, { registry }).filter((d) => d.code !== "possible-crosstalk");
+    const bom = billOfMaterials(resolved);
+    if (values.json) console.log(JSON.stringify({ size: [0, 1, 2].map((k) => max[k]! - min[k]! + 1), blocks: resolved.blocks.size, bom, diagnostics: diags }, null, 2));
+    else {
+      console.log(`${name}: ${max[0] - min[0] + 1} × ${max[1] - min[1] + 1} × ${max[2] - min[2] + 1} (x × y × z), ${resolved.blocks.size} blocks`);
+      for (const b of bom) console.log(`  ${String(b.count).padStart(5)}  ${b.id.replace("minecraft:", "")}`);
+      for (const d of diags) console.log(formatDiagnostic(d));
+    }
+    if (values.out) {
+      const out = resolve(values.out);
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, viewer(resolved, toVizModel(resolved, undefined, diags, { registry }), with3d));
+      console.log(`Viewer: ${out}`);
+    }
+    return;
+  }
+
+  const assembly = (await loadAssembly(target)).resolve();
+  const diags = runChecks(assembly, { registry });
   const flow = analyzeFlow(assembly);
   const allDiags = [...diags, ...flow.diagnostics];
+  const model = () => toVizModel(assembly, flow, allDiags, { registry });
 
   if (cmd === "check" || cmd === "all") {
     if (values.json) console.log(JSON.stringify(allDiags, null, 2));
     else {
-      console.log(`${assembly.name}: ${assembly.instances.size} instances, ${assembly.blocks.size} cells`);
+      console.log(`${assembly.name}: ${assembly.instances.size} instances, ${assembly.blocks.size} blocks (${assembly.env.name})`);
       for (const d of allDiags) console.log(formatDiagnostic(d));
       if (allDiags.length === 0) console.log("No findings.");
     }
@@ -76,14 +131,13 @@ async function main(): Promise<void> {
   }
   if (cmd === "render") {
     if (!values.out) usage();
-    const model = toVizModel(assembly, flow, allDiags);
     const out = resolve(values.out);
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(
       out,
       out.endsWith(".html")
-        ? toHtml(model)
-        : toSvg(model, { rotation: Number(values.rotation), ...(values.title ? { title: values.title } : {}) }),
+        ? viewer(assembly, model(), with3d)
+        : toSvg(model(), { rotation: Number(values.rotation), ...(values.title ? { title: values.title } : {}) }),
     );
     console.log(`Rendered: ${out}`);
     return;
@@ -109,9 +163,8 @@ async function main(): Promise<void> {
     for (const l of res.losses) console.warn(`Lost in conversion: ${l}`);
     if (cmd === "all") {
       const base = out.replace(/\.[^.]+$/, "");
-      const model = toVizModel(assembly, flow, allDiags);
-      writeFileSync(`${base}.viz.json`, JSON.stringify(model, null, 2));
-      writeFileSync(`${base}.html`, toHtml(model));
+      writeFileSync(`${base}.viz.json`, JSON.stringify(model(), null, 2));
+      writeFileSync(`${base}.html`, viewer(assembly, model(), with3d));
       console.log(`Viewer: ${base}.html`);
     }
   }

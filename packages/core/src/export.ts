@@ -1,6 +1,6 @@
 /**
  * Schematic output interfaces. The core knows no file format; adapters
- * (e.g. @redstack/export-nucleation) implement them.
+ * (e.g. @redstack/nucleation) implement them.
  */
 
 import type { ResolvedAssembly } from "./assembly.js";

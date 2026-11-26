@@ -97,13 +97,19 @@ export function block(id: string, props: Record<string, PropValue> = {}): Block 
   return new Block(id, props);
 }
 
-/** Common blocks. The list grows with the standard library. */
+/**
+ * Blocks with sensible default states. Blocks that come in variants take the
+ * concrete id as an argument – usually from a material slot:
+ * `B.fence(c.material(M.cactusBreaker))`. Any other block: `block("id", props)`.
+ */
 export const B = {
   air: () => block("air"),
+  of: (id: string, props: Record<string, PropValue> = {}) => block(id, props),
   stone: () => block("stone"),
   glass: () => block("glass"),
   sand: () => block("sand"),
   water: () => block("water", { level: 0 }),
+  fence: (id = "minecraft:oak_fence") => block(id, { north: false, east: false, south: false, west: false, waterlogged: false }),
   hopper: () => block("hopper", { facing: "down", enabled: true }),
   chest: () => block("chest", { facing: "south", type: "single", waterlogged: false }),
   dropper: () => block("dropper", { facing: "down", triggered: false }),
@@ -114,8 +120,6 @@ export const B = {
   observer: () => block("observer", { facing: "south", powered: false }),
   piston: (sticky = false) => block(sticky ? "sticky_piston" : "piston", { facing: "north", extended: false }),
   cactus: () => block("cactus", { age: 0 }),
-  oakFence: () =>
-    block("oak_fence", { north: false, east: false, south: false, west: false, waterlogged: false }),
 } as const;
 
 /** Rotates all direction-dependent properties of a block. */

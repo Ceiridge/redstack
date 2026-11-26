@@ -24,9 +24,11 @@ export interface RenderOptions {
 }
 
 type V3 = readonly [number, number, number];
-type Shape = "cube" | "post" | "inset" | "slab";
 
-interface Style {
+/** How a block is drawn. Decided by toVizModel from block facts (see blockStyle). */
+export type Shape = "cube" | "post" | "inset" | "slab" | "flat";
+
+export interface BlockStyle {
   readonly color: string;
   readonly shape: Shape;
   readonly opacity?: number;
@@ -34,31 +36,13 @@ interface Style {
   readonly solid: boolean;
 }
 
-const STYLES: Readonly<Record<string, Style>> = {
-  "minecraft:stone": { color: "#8a8d91", shape: "cube", solid: true },
-  "minecraft:sand": { color: "#dccf9a", shape: "cube", solid: true },
-  "minecraft:cactus": { color: "#4f8a3c", shape: "inset", solid: false },
-  "minecraft:hopper": { color: "#4a4d52", shape: "cube", solid: false },
-  "minecraft:chest": { color: "#a8743a", shape: "inset", solid: false },
-  "minecraft:oak_fence": { color: "#b0894f", shape: "post", solid: false },
-  "minecraft:glass": { color: "#bfe3f2", shape: "cube", opacity: 0.45, solid: false },
-  "minecraft:water": { color: "#3f76e4", shape: "cube", opacity: 0.6, solid: false },
-  "minecraft:redstone_wire": { color: "#b3261e", shape: "slab", solid: false },
-  "minecraft:observer": { color: "#6b6f74", shape: "cube", solid: true },
-  "minecraft:piston": { color: "#9c8a6a", shape: "cube", solid: true },
-  "minecraft:sticky_piston": { color: "#7fa36a", shape: "cube", solid: true },
-};
-
 function hashColor(id: string): string {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return `hsl(${h % 360} 35% 55%)`;
 }
 
-function styleOf(block: string): Style {
-  const id = block.split("[")[0]!;
-  return STYLES[id] ?? { color: hashColor(id), shape: "cube", solid: true };
-}
+const fallbackStyle = (block: string): BlockStyle => ({ color: hashColor(block.split("[")[0]!), shape: "cube", solid: true });
 
 function propOf(block: string, name: string): string | undefined {
   const m = new RegExp(`[\\[,]${name}=([a-z_0-9]+)`).exec(block);
@@ -117,7 +101,7 @@ export function renderSvg(model: VizModel, options: RenderOptions = {}): string 
 
   const blocks = model.blocks
     .filter((b) => b.pos[1] <= maxY)
-    .map((b) => ({ ...b, v: view(b.pos), style: styleOf(b.block) }));
+    .map((b) => ({ ...b, v: view(b.pos), style: b.style ?? fallbackStyle(b.block) }));
   const solid = new Set(blocks.filter((b) => b.style.solid).map((b) => b.v.join(",")));
   blocks.sort((p, q) => p.v[0] + p.v[1] + p.v[2] - (q.v[0] + q.v[1] + q.v[2]) || p.v[1] - q.v[1]);
 
@@ -154,7 +138,8 @@ export function renderSvg(model: VizModel, options: RenderOptions = {}): string 
     let g = "";
     if (s.shape === "post") g = box(x + 0.375, y, z + 0.375, x + 0.625, y + 1, z + 0.625, s.color, { top: false, px: false, pz: false });
     else if (s.shape === "inset") g = box(x + 0.0625, y, z + 0.0625, x + 0.9375, y + 0.875, z + 0.9375, s.color, { top: false, px: false, pz: false }, s.opacity);
-    else if (s.shape === "slab") g = box(x, y, z, x + 1, y + 0.1, z + 1, s.color, { top: false, px: false, pz: false }, s.opacity);
+    else if (s.shape === "slab") g = box(x, y, z, x + 1, y + 0.5, z + 1, s.color, { top: false, px: false, pz: false }, s.opacity);
+    else if (s.shape === "flat") g = box(x, y, z, x + 1, y + 0.08, z + 1, s.color, { top: false, px: false, pz: false }, s.opacity);
     else g = box(x, y, z, x + 1, y + 1, z + 1, s.color, hidden, s.opacity);
 
     // Hopper output direction: arrow on the top face, dot for "down"

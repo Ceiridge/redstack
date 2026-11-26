@@ -49,7 +49,7 @@ export function formatReport(r: TestReport): string {
   for (const e of r.expectations) lines.push(`  ${e.passed ? "ok  " : "FAIL"} ${e.expectation.type}: ${e.message}`);
   for (const run of r.runs) {
     for (const ev of run.events) lines.push(`  event run ${run.run} @${ev.at ? ev.at.join(",") : "-"}: ${ev.message}`);
-    lines.push(`  run ${run.run}: ${fmt(run.ticks)} ticks in ${fmt(run.wallClockMs / 1000)} s`);
+    lines.push(`  run ${run.run}: ${fmt(run.ticks)} ticks in ${fmt(run.wallClockMs / 1000)} s${run.msPerTick !== undefined ? `, ${run.msPerTick.toFixed(3)} ms server time per tick` : ""}`);
   }
   return lines.join("\n");
 }

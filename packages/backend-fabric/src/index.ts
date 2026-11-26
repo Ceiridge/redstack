@@ -45,11 +45,13 @@ export interface FabricCarpetOptions {
   readonly log?: (message: string) => void;
 }
 
+/** The server version this backend is set up for (see server-manifest.json). */
+const SERVER_MINECRAFT = "26.3";
+
 /** Game rules set for every run (26.3 names). Scenarios can override them. */
 const BASE_GAMERULES: Readonly<Record<string, string | number | boolean>> = {
   advance_time: false,
   advance_weather: false,
-  random_tick_speed: 3,
   max_block_modifications: 1_000_000,
 };
 
@@ -82,9 +84,20 @@ export class FabricCarpetBackend implements TestBackend {
     };
   }
 
+  unsupported(s: Scenario): string[] {
+    const env = s.assembly.env;
+    const out: string[] = [];
+    if (env.minecraft !== SERVER_MINECRAFT) out.push(`the server runs Minecraft ${SERVER_MINECRAFT}, the design targets ${env.minecraft}`);
+    if (env.hopperTransferTicks !== 8 || env.hopperAmount !== 1) out.push("custom hopper speed (Spigot/Paper setting) cannot be emulated on Fabric");
+    if (Object.keys(env.growthModifiers).length) out.push("growth modifiers (Spigot/Paper setting) cannot be emulated on Fabric");
+    return out;
+  }
+
   async run(s: Scenario): Promise<TestReport> {
     const missing = missingCapabilities(this, s);
     if (missing.length) throw new Error(`${this.id} cannot provide: ${missing.join(", ")}`);
+    const unsupported = this.unsupported(s);
+    if (unsupported.length) throw new Error(`${this.id} cannot run "${s.name}": ${unsupported.join("; ")}.`);
 
     const startedAt = new Date().toISOString();
     const rcon = await Rcon.connect(this.#opts.host, this.#opts.port, this.#opts.password);
@@ -117,8 +130,9 @@ export class FabricCarpetBackend implements TestBackend {
     await server.ok("tick freeze");
     const rules = {
       ...BASE_GAMERULES,
+      random_tick_speed: s.assembly.env.randomTickSpeed,
       spawn_mobs: s.requires.includes("mob-spawning"),
-      ...s.environment.gamerules,
+      ...s.world.gamerules,
     };
     for (const [rule, value] of Object.entries(rules)) await server.ok(`gamerule ${rule} ${String(value)}`);
   }
@@ -140,12 +154,12 @@ export class FabricCarpetBackend implements TestBackend {
     await server.ok(`fill ${lo[0]} ${lo[1]} ${lo[2]} ${hi[0]} ${lo[1]} ${hi[2]} minecraft:barrier`, /./);
 
     // 2. Fake player on a platform
-    const afk = w(s.environment.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
+    const afk = w(s.world.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
     await server.ok(`setblock ${afk[0]} ${afk[1] - 1} ${afk[2]} minecraft:glass`, /./);
     await this.#ensureBot(server, afk);
 
     // 3. Blocks bottom-up
-    const blocks = [...a.blocks.values()].filter((b) => b.block.id !== "minecraft:air").sort((x, y) => x.pos[1] - y.pos[1]);
+    const blocks = [...a.blocks.values()].sort((x, y) => x.pos[1] - y.pos[1]);
     for (const b of blocks) {
       const p = w(b.pos);
       await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}`, /Changed the block/);
@@ -165,10 +179,14 @@ export class FabricCarpetBackend implements TestBackend {
     const measure = async (tick: number) => samples.push({ tick, stored: await this.#countStored(server, sinks, items) });
     const t0Game = await server.gameTime();
     let tick = 0;
+    let sprintMs = 0;
     await measure(tick);
     while (tick < s.durationTicks) {
       const step = Math.min(s.sampleEveryTicks, s.durationTicks - tick);
-      tick = (await server.sprint(step, this.#opts.log)) - t0Game;
+      const started = Date.now();
+      const now = await server.sprint(step, this.#opts.log);
+      sprintMs += Date.now() - started;
+      tick = now - t0Game;
       await measure(tick);
     }
 
@@ -178,7 +196,18 @@ export class FabricCarpetBackend implements TestBackend {
     const ground = await server.numbers(`execute as @e[type=item,${area}] run data get entity @s Item.count`);
     if (ground.length > 0) {
       const items = ground.reduce((x, y) => x + y, 0);
-      events.push({ tick, type: "ground-items", message: `${items} item(s) in ${ground.length} stack(s) on the ground in the test area.`, data: { items, stacks: ground.length } });
+      // Positions in assembly coordinates, so the viewer and an AI can point at the leak
+      const raw = await server.command(`execute as @e[type=item,${area},limit=10] run data get entity @s Pos`);
+      const at = [...raw.matchAll(/\[(-?[\d.]+)d, (-?[\d.]+)d, (-?[\d.]+)d\]/g)].map(
+        (m) => [Math.floor(Number(m[1])) - this.#opts.origin[0], Math.floor(Number(m[2])) - this.#opts.origin[1], Math.floor(Number(m[3])) - this.#opts.origin[2]] as const,
+      );
+      events.push({
+        tick,
+        type: "ground-items",
+        ...(at[0] ? { at: at[0] } : {}),
+        message: `${items} item(s) in ${ground.length} stack(s) on the ground${at.length ? ` at ${at.map((p) => `(${p.join(",")})`).join(" ")}` : ""}.`,
+        data: { items, stacks: ground.length, positions: at },
+      });
     }
     for (const b of a.blocks.values()) {
       if (b.block.id !== "minecraft:hopper") continue;
@@ -195,6 +224,7 @@ export class FabricCarpetBackend implements TestBackend {
       samples,
       events,
       wallClockMs: Date.now() - t0,
+      ...(tick > 0 ? { msPerTick: sprintMs / tick } : {}),
     };
   }
 

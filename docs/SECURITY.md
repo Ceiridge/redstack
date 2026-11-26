@@ -32,5 +32,9 @@ Many libraries in this space are small and maintained by individuals. Therefore:
 - The server listens on 127.0.0.1 only, with a random RCON password. Mods are arbitrary Java code; running the server in a container without network access is planned (phase 3).
 - Unreviewed mods (e.g. FarmBench) only in such a container.
 
+## Game assets and browser libraries
+- The 3D view uses Minecraft's client jar as resource pack: `pnpm assets` downloads it into `~/.cache/redstack` (URL, SHA-1 and SHA-256 pinned in `packages/nucleation/assets-manifest.json`). Mojang's assets are never committed.
+- The viewer page loads three.js from jsDelivr, pinned to an exact version (`0.170.0`), only when a 3D model is embedded.
+
 ## Secrets
 - API keys and RCON passwords only in `.env` (in `.gitignore`). Template: `.env.example`.

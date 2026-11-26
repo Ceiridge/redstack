@@ -21,12 +21,14 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 
 ## 2. Modular and composable
 
-- **Build from components.** A farm is an assembly of components connected through ports – not a list of blocks.
+- **Build from components.** A farm is an assembly of components connected through ports – not a list of blocks. Components nest: if a design repeats a unit (a slice, a cell, a module), make the unit a component and compose it (`add`, `to`, `row`, `expose`).
 - **No duplication.** If a structure appears twice, it becomes a component or a parameter. If several farms use it, it belongs in `@redstack/stdlib`, with a scenario that tests it.
 - **Parameters over copies.** Variants (breaker block, length, item) are parameters with defaults, not new components.
-- **Relations over coordinates.** Place blocks with `above`, `inFrontOf`, `nextTo` …; connect instances with `attach`/`connect`. Raw offsets only where geometry is genuinely irregular.
+- **Relations over coordinates.** Place blocks with `above`, `inFrontOf`, `nextTo` …, repeat with `line`/`fill`; dock components with `to()` (or `attach`/`connect` when there is more than one port). Raw offsets only where geometry is genuinely irregular.
+- **Materials over block ids.** Ask for a slot (`c.material(M.cactusBreaker)`, or a new `material(role, tag, default)`) wherever another block of the same kind would do. Hard-code an id only where the exact block matters (hopper, observer, …).
+- **Environment-aware rates.** Compute rates from `c.env` (`hopperItemsPerHour`, `ticksForRandomTicks`, `growthFactor`), never from constants that silently assume vanilla.
 - **Semantic block helpers.** Use `outputTo`, `signalTowards`, `watching`, `pushing` instead of raw `facing` values – that is where the classic mistakes are.
-- **Reserve space explicitly.** Cells that must stay free (growth space, fall paths, cactus neighbours) are placed as `air`; the checks then catch anything built into them.
+- **Reserve space explicitly.** Cells that must stay free (growth space, fall paths, cactus neighbours) go into `c.keepClear(...)`; the checks then catch anything built into them.
 - **Declare rates.** Every component declares `produces`/`passes`/`stores`/`consumes` with a basis, so the flow model and the economy can use it.
 - **Respect the layers.** `core` has no dependencies; third-party libraries only in adapter packages; server- or market-specific code only in its own module (see `docs/ARCHITECTURE.md`).
 
@@ -34,8 +36,9 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 
 1. Look in `@redstack/stdlib` for what exists. Extend it if a building block is missing.
 2. Write the component or assembly (`examples/src/` for farms).
-3. `pnpm build && node apps/cli/dist/main.js all <module> -o out/<name>.litematic` – fix all errors, read the warnings.
-4. Look at it: `redstack render <module> -o out/<name>.html` (rotate, cut layers, check findings).
+3. `pnpm build && node apps/cli/dist/main.js all <module> -o out/<name>.litematic` – fix all errors (they include invalid block states and materials, checked against Minecraft's block table), read the warnings.
+4. Look at it: `redstack render <module> -o out/<name>.html` – 3D view and debug view with flows and findings.
+   To learn from an existing design: `redstack inspect <file.litematic> -o out/x.html`, and `schematicComponent()` to benchmark it in-game. Credit its designer; do not commit third-party schematics.
 5. Add an in-game scenario (`examples/src/scenarios.ts`) with `matches-flow-model`, `no-ground-items`, `no-stuck-hoppers` as appropriate, and run it (`pnpm test:game <name>`, server setup in `packages/backend-fabric/README.md`).
 6. If model and measurement disagree: experiment, explain, then fix the design **or** calibrate the rate model with the measured value – never just widen the tolerance.
 7. Unit tests for any new logic; `pnpm test` must pass.

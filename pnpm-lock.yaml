@@ -23,12 +23,12 @@ importers:
       '@redstack/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@redstack/export-nucleation':
-        specifier: workspace:*
-        version: link:../../packages/export-nucleation
       '@redstack/flow':
         specifier: workspace:*
         version: link:../../packages/flow
+      '@redstack/nucleation':
+        specifier: workspace:*
+        version: link:../../packages/nucleation
       '@redstack/testing':
         specifier: workspace:*
         version: link:../../packages/testing
@@ -44,6 +44,9 @@ importers:
       '@redstack/flow':
         specifier: workspace:*
         version: link:../packages/flow
+      '@redstack/nucleation':
+        specifier: workspace:*
+        version: link:../packages/nucleation
       '@redstack/stdlib':
         specifier: workspace:*
         version: link:../packages/stdlib
@@ -70,15 +73,6 @@ importers:
 
   packages/economy: {}
 
-  packages/export-nucleation:
-    dependencies:
-      '@redstack/core':
-        specifier: workspace:*
-        version: link:../core
-      nucleation:
-        specifier: 0.12.3
-        version: 0.12.3
-
   packages/flow:
     dependencies:
       '@redstack/core':
@@ -100,11 +94,26 @@ importers:
         specifier: workspace:*
         version: link:../economy
 
+  packages/nucleation:
+    dependencies:
+      '@redstack/core':
+        specifier: workspace:*
+        version: link:../core
+      nucleation:
+        specifier: 0.12.3
+        version: 0.12.3
+
   packages/stdlib:
     dependencies:
       '@redstack/core':
         specifier: workspace:*
         version: link:../core
+      '@redstack/flow':
+        specifier: workspace:*
+        version: link:../flow
+      '@redstack/nucleation':
+        specifier: workspace:*
+        version: link:../nucleation
 
   packages/testing:
     dependencies:
@@ -123,6 +132,9 @@ importers:
       '@redstack/flow':
         specifier: workspace:*
         version: link:../flow
+      '@redstack/nucleation':
+        specifier: workspace:*
+        version: link:../nucleation
 
 packages:
 

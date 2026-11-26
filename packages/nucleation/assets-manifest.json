@@ -1,0 +1,7 @@
+{
+  "$comment": "Minecraft client jar, used as the resource pack for 3D meshes (block models and textures). Mojang's assets: downloaded into the local cache, never committed. SHA-1 from Mojang's version manifest; SHA-256 recorded at first download.",
+  "minecraft": "26.3",
+  "url": "https://piston-data.mojang.com/v1/objects/e877b6a07acd633fb3bb475002175cec036e7b87/client.jar",
+  "sha1": "e877b6a07acd633fb3bb475002175cec036e7b87",
+  "sha256": "4508d006323f24fa02876310c192d739af56516eb259000ac50f0909a68c9a2d"
+}

@@ -24,7 +24,10 @@ The server listens on 127.0.0.1 only, uses a void world, and does not pause when
 2. Put a Carpet fake player on a glass platform above the assembly – without a player nearby there are no random ticks or spawns
 3. Place blocks bottom-up, run the preparation actions
 4. Keep the game frozen; advance with `tick sprint`; sample storage contents against the actual game time
-5. Report events with locations: items on the ground, backed-up hoppers
+5. Report events with locations: items on the ground (with positions), backed-up hoppers
+6. Report server time per tick while fast-forwarding (a lag indicator; meaningful for long runs)
+
+The backend applies the design's environment (random tick speed) and refuses environments it cannot reproduce on Fabric (Spigot/Paper hopper or growth settings, another Minecraft version) instead of measuring the wrong thing.
 
 Speed on 2 CPU cores: ~10,000–20,000 ticks per second for small farms (4 in-game hours ≈ 15–30 s).
 

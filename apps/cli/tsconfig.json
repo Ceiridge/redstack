@@ -15,7 +15,7 @@
       "path": "../../packages/flow"
     },
     {
-      "path": "../../packages/export-nucleation"
+      "path": "../../packages/nucleation"
     },
     {
       "path": "../../packages/viz"

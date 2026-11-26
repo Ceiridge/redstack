@@ -4,52 +4,30 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { Assembly, B, defineComponent, runChecks } from "@redstack/core";
+import { B, assembly, component, runChecks } from "@redstack/core";
+import { registry } from "@redstack/nucleation";
 import { analyzeFlow } from "@redstack/flow";
-import { toHtml, toSvg, toVizModel } from "./index.js";
+import { blockStyle, toHtml, toSvg, toVizModel } from "./index.js";
 
-const Source = defineComponent({
-  name: "Source",
-  description: "",
-  status: "draft",
-  defaults: { rate: 20_000 },
-  build(c, { rate }) {
-    const h = c.origin(B.hopper().outputTo("forward"));
-    c.output("out", "items", h.neighbor("forward"));
-    c.produces("out", "minecraft:stone", rate, "estimate");
-  },
+const Source = component({ name: "Source", params: { rate: 20_000 } }, (c, { rate }) => {
+  const h = c.block(B.hopper().outputTo("forward"));
+  c.output("out", h.neighbor("forward"), { item: "minecraft:stone", rate: { perHour: rate, basis: "estimate" } });
 });
 
-const Pipe = defineComponent({
-  name: "Pipe",
-  description: "",
-  status: "draft",
-  defaults: {},
-  build(c) {
-    const h = c.origin(B.hopper().outputTo("forward"));
-    c.input("in", "items", h);
-    c.output("out", "items", h.neighbor("forward"));
-    c.passes("in", "out", 9_000, "game-mechanic");
-  },
+const Pipe = component({ name: "Pipe" }, (c) => {
+  const h = c.block(B.hopper().outputTo("forward"));
+  c.input("in", h);
+  c.output("out", h.neighbor("forward"));
+  c.passes("in", "out", 9_000, "game-mechanic");
 });
 
-const Store = defineComponent({
-  name: "Store",
-  description: "",
-  status: "draft",
-  defaults: {},
-  build(c) {
-    c.input("in", "items", c.origin(B.chest()));
-    c.stores("in", 1728, "game-mechanic");
-  },
+const Store = component({ name: "Store" }, (c) => {
+  c.input("in", c.block(B.chest()));
+  c.stores("in", 1728, "game-mechanic");
 });
 
 function model() {
-  const a = new Assembly("viz-test");
-  const src = a.add(Source);
-  const pipe = a.add(Pipe).attach("in", src.port("out"));
-  a.add(Store).attach("in", pipe.port("out"));
-  const r = a.resolve();
+  const r = assembly("viz-test", (a) => void a.add(Source).to(Pipe).to(Store)).resolve();
   const flow = analyzeFlow(r);
   return toVizModel(r, flow, [...runChecks(r), ...flow.diagnostics]);
 }
@@ -86,18 +64,8 @@ describe("svg renderer", () => {
   });
 
   it("maxY cuts away blocks above", () => {
-    const a = new Assembly("tower");
-    const Tower = defineComponent({
-      name: "Tower",
-      description: "",
-      status: "draft",
-      defaults: {},
-      build(c) {
-        c.place(B.glass()).above(c.origin(B.stone()));
-      },
-    });
-    a.add(Tower);
-    const m = toVizModel(a.resolve());
+    const Tower = component({ name: "Tower" }, (c) => void c.block(B.glass()).above(c.block(B.stone())));
+    const m = toVizModel(assembly("tower", (a) => void a.add(Tower)).resolve());
     assert.match(toSvg(m), /minecraft:glass/);
     assert.doesNotMatch(toSvg(m, { maxY: 0 }), /minecraft:glass/);
   });
@@ -110,12 +78,38 @@ describe("html viewer", () => {
     assert.match(html, /const model = \{/);
     assert.doesNotMatch(html, /sourceMappingURL/);
     assert.equal(html.match(/<\/script>/g)?.length, 1);
+    assert.doesNotMatch(html, /a <\/script> b/);
   });
 
-  it("contains a syntactically valid module script", () => {
-    const script = /<script type="module">([\s\S]*)<\/script>/.exec(toHtml(model()))![1]!;
-    const file = join(mkdtempSync(join(tmpdir(), "redstack-viz-")), "viewer.mjs");
-    writeFileSync(file, script);
-    execFileSync(process.execPath, ["--check", file]); // throws on a syntax error
+  it("contains syntactically valid module scripts, with and without 3D", () => {
+    const fakeGlb = new Uint8Array([0x67, 0x6c, 0x54, 0x46]);
+    for (const html of [toHtml(model()), toHtml(model(), { glb: fakeGlb })]) {
+      for (const [, script] of html.matchAll(/<script type="module">([\s\S]*?)<\/script>/g)) {
+        const file = join(mkdtempSync(join(tmpdir(), "redstack-viz-")), "viewer.mjs");
+        writeFileSync(file, script!);
+        execFileSync(process.execPath, ["--check", file]); // throws on a syntax error
+      }
+    }
+  });
+
+  it("loads three.js only when a 3D model is embedded", () => {
+    assert.doesNotMatch(toHtml(model()), /importmap/);
+    assert.match(toHtml(model(), { glb: new Uint8Array([1]) }), /importmap[\s\S]*three@0\.170\.0/);
+  });
+});
+
+describe("block styles from the registry", () => {
+  it("derives colour, shape and transparency from block facts", () => {
+    assert.equal(blockStyle(registry.info("minecraft:oak_fence")!).shape, "post");
+    assert.equal(blockStyle(registry.info("minecraft:stone_slab")!).shape, "slab");
+    assert.equal(blockStyle(registry.info("minecraft:glass")!).opacity, 0.45);
+    assert.equal(blockStyle(registry.info("minecraft:stone")!).solid, true);
+    assert.match(blockStyle(registry.info("minecraft:cactus")!).color, /^#[0-9a-f]{6}$/);
+  });
+
+  it("the model carries styles when a registry is given", () => {
+    const r = assembly("t", (a) => void a.add(Store)).resolve();
+    assert.equal(toVizModel(r).blocks[0]!.style, undefined);
+    assert.equal(toVizModel(r, undefined, [], { registry }).blocks[0]!.style!.shape, "inset");
   });
 });

@@ -23,15 +23,17 @@ export type Capability =
   | "chunk-reload"
   | "fake-player";
 
-export interface Environment {
+/**
+ * The world a test runs in. The game version and server settings come from
+ * the assembly's Environment (@redstack/core); this describes the test setup.
+ */
+export interface TestWorld {
   readonly terrain: "void" | "flat" | "terrain";
   readonly biome?: string;
   /** Position of the AFK player in assembly coordinates. Default: above the centre of the assembly. */
   readonly afkSpot?: Vec3;
   readonly simulationDistance?: number;
   readonly gamerules?: Readonly<Record<string, string | number | boolean>>;
-  /** Server profile, e.g. "vanilla", "paper-default", "donut-guess" */
-  readonly serverProfile?: string;
 }
 
 /** Preparation actions. Positions in assembly coordinates. More (power, chunk reload) will follow. */
@@ -48,7 +50,7 @@ export type Expectation =
 export interface Scenario {
   readonly name: string;
   readonly assembly: ResolvedAssembly;
-  readonly environment: Environment;
+  readonly world: TestWorld;
   readonly requires: readonly Capability[];
   readonly durationTicks: number;
   /** Ticks at the start that do not count towards the rate (warm-up) */
@@ -64,7 +66,7 @@ export interface Scenario {
 
 export interface ScenarioOptions {
   readonly name?: string;
-  readonly environment?: Partial<Environment>;
+  readonly world?: Partial<TestWorld>;
   readonly requires?: readonly Capability[];
   readonly durationTicks: number;
   readonly warmupTicks?: number;
@@ -79,7 +81,7 @@ export function scenario(assembly: ResolvedAssembly, o: ScenarioOptions): Scenar
   return {
     name: o.name ?? assembly.name,
     assembly,
-    environment: { terrain: "void", serverProfile: "vanilla", ...o.environment },
+    world: { terrain: "void", ...o.world },
     requires: o.requires ?? ["items", "block-updates"],
     durationTicks: o.durationTicks,
     warmupTicks: o.warmupTicks ?? 0,
@@ -113,6 +115,8 @@ export interface RunResult {
   readonly samples: readonly Sample[];
   readonly events: readonly TestEvent[];
   readonly wallClockMs: number;
+  /** Milliseconds of server time per game tick while fast-forwarding the farm (lag indicator) */
+  readonly msPerTick?: number;
 }
 
 export interface ExpectationResult {
@@ -136,6 +140,8 @@ export interface TestReport {
 export interface TestBackend {
   readonly id: string;
   readonly capabilities: ReadonlySet<Capability>;
+  /** Reasons why this backend cannot reproduce the scenario's environment (empty = fine) */
+  unsupported(scenario: Scenario): string[];
   run(scenario: Scenario): Promise<TestReport>;
 }
 

@@ -6,9 +6,62 @@ import type { ResolvedAssembly } from "./assembly.js";
 import { REDSTONE_RELEVANT } from "./blocks.js";
 import type { Diagnostic } from "./diagnostics.js";
 import { DIR_VECTORS, add, key } from "./geometry.js";
+import { type BlockRegistry, accepts } from "./registry.js";
 
-export function runChecks(a: ResolvedAssembly): Diagnostic[] {
-  return [...a.diagnostics, ...checkConnections(a), ...checkUnconnected(a), ...checkCrosstalk(a)];
+export interface CheckOptions {
+  /** Enables block-state and material checks */
+  readonly registry?: BlockRegistry;
+}
+
+export function runChecks(a: ResolvedAssembly, options: CheckOptions = {}): Diagnostic[] {
+  return [
+    ...a.diagnostics,
+    ...checkConnections(a),
+    ...checkUnconnected(a),
+    ...checkCrosstalk(a),
+    ...(options.registry ? [...checkBlockStates(a, options.registry), ...checkMaterials(a, options.registry)] : []),
+  ];
+}
+
+/** Every block must exist, and every property and value must be valid for it. */
+export function checkBlockStates(a: ResolvedAssembly, registry: BlockRegistry): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const reported = new Set<string>();
+  for (const b of a.blocks.values()) {
+    const info = registry.info(b.block.id);
+    const problems: string[] = [];
+    if (!info) problems.push(`unknown block ${b.block.id}`);
+    else {
+      for (const [prop, value] of Object.entries(b.block.props)) {
+        const allowed = info.properties[prop];
+        if (!allowed) problems.push(`${b.block.id} has no property "${prop}"`);
+        else if (!allowed.includes(String(value))) problems.push(`${b.block.id}[${prop}=${String(value)}] is invalid (allowed: ${allowed.join(", ")})`);
+      }
+    }
+    for (const p of problems) {
+      const k = `${b.instanceId}|${p}`;
+      if (reported.has(k)) continue;
+      reported.add(k);
+      out.push({ severity: "error", code: "invalid-block-state", message: `${b.instanceId}: ${p}.`, at: b.pos, instances: [b.instanceId] });
+    }
+  }
+  return out;
+}
+
+/** Material overrides must satisfy the slot's tag or list. */
+export function checkMaterials(a: ResolvedAssembly, registry: BlockRegistry): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  for (const m of a.materials) {
+    if (accepts(registry, m.slot.accepts, m.id)) continue;
+    const what = typeof m.slot.accepts === "string" ? m.slot.accepts : m.slot.accepts.join(", ");
+    out.push({
+      severity: "error",
+      code: "material-not-accepted",
+      message: `${m.instanceId}: material "${m.slot.role}" = ${m.id} is not in ${what}.`,
+      instances: [m.instanceId],
+    });
+  }
+  return out;
 }
 
 /** Connections: direction, kind, bus width and geometry must match. */
@@ -51,7 +104,7 @@ export function checkConnections(a: ResolvedAssembly): Diagnostic[] {
 }
 
 export function checkUnconnected(a: ResolvedAssembly): Diagnostic[] {
-  const used = new Set<string>();
+  const used = new Set<string>(a.openPorts.map((p) => `${p.instanceId}.${p.port}`));
   for (const c of a.connections) {
     used.add(`${c.from.instanceId}.${c.from.port}`);
     used.add(`${c.to.instanceId}.${c.to.port}`);
