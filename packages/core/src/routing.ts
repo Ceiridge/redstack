@@ -310,8 +310,19 @@ export function poweredCells(
   opts: { readonly pulses?: boolean } = {},
 ): Set<string> {
   const byKey = new Map<string, string>();
+  const facings = new Map<string, string>();
   const list = [...blocks];
-  for (const b of list) byKey.set(key(b.pos), b.block.id);
+  for (const b of list) {
+    byKey.set(key(b.pos), b.block.id);
+    const f = b.block.props["facing"];
+    if (typeof f === "string") facings.set(key(b.pos), f);
+  }
+  const lookup = (p: Vec3) => {
+    const id = byKey.get(key(p));
+    if (!id) return undefined;
+    const facing = facings.get(key(p));
+    return facing ? { id, facing } : { id };
+  };
   const out = new Set<string>();
   const poweredBlock = (p: Vec3) => {
     out.add(key(p));
@@ -323,7 +334,7 @@ export function poweredCells(
     const facing = block.props["facing"];
     const f = typeof facing === "string" && facing in DIR_VECTORS ? (facing as Dir) : undefined;
     if (id === "redstone_wire") {
-      for (const d of ["north", "east", "south", "west", "down"] as const) poweredBlock(add(pos, DIR_VECTORS[d]));
+      for (const d of [...dustPoints(pos, lookup), "down" as const]) poweredBlock(add(pos, DIR_VECTORS[d]));
     } else if (id === "redstone_block" || id === "redstone_torch" || id === "redstone_wall_torch" || id === "lever" || id.endsWith("_button")) {
       for (const d of ALL_DIRS) poweredBlock(add(pos, DIR_VECTORS[d]));
     } else if ((id === "repeater" || id === "comparator") && f) {
@@ -335,6 +346,39 @@ export function poweredCells(
     }
   }
   return out;
+}
+
+const HORIZONTAL: readonly Dir[] = ["north", "east", "south", "west"];
+/** Blocks dust turns towards (besides other dust). Repeaters and observers only along their axis. */
+const DUST_CONNECTS = /^(redstone_torch|redstone_wall_torch|lever|.*_button|redstone_block|target|comparator|daylight_detector|tripwire_hook|detector_rail|.*_pressure_plate|lectern|trapped_chest)$/;
+
+/**
+ * Sides a dust points to, from its neighbours as the game shapes it: towards
+ * dust on the same level, one up (if nothing solid is above this dust) or one
+ * down (if the side is not solid), and towards components that connect.
+ * Without connections dust is a cross and points everywhere; with one it is a
+ * line and points both ways along it.
+ */
+export function dustPoints(pos: Vec3, blockAt: (p: Vec3) => { readonly id: string; readonly facing?: string } | undefined): Dir[] {
+  const idAt = (p: Vec3) => (blockAt(p)?.id ?? "minecraft:air").replace("minecraft:", "");
+  const solid = (p: Vec3) => conductsRedstone(`minecraft:${idAt(p)}`) && idAt(p) !== "redstone_wire";
+  const roofed = solid(add(pos, [0, 1, 0]));
+  const connected = HORIZONTAL.filter((d) => {
+    const n = add(pos, DIR_VECTORS[d]);
+    const id = idAt(n);
+    if (id === "redstone_wire") return true;
+    if (DUST_CONNECTS.test(id)) return true;
+    // Repeaters connect at front and back, observers at their output (back)
+    const f = blockAt(n)?.facing;
+    if (id === "repeater" && (f === d || f === OPPOSITE_DIR[d])) return true;
+    if (id === "observer" && f === d) return true;
+    if (!roofed && idAt(add(n, [0, 1, 0])) === "redstone_wire" && solid(n)) return true;
+    if (!solid(n) && idAt(add(n, [0, -1, 0])) === "redstone_wire") return true;
+    return false;
+  });
+  if (connected.length === 0) return [...HORIZONTAL];
+  if (connected.length === 1) return [connected[0]!, OPPOSITE_DIR[connected[0]!]];
+  return connected;
 }
 
 /** Binary min-heap for the A* open list. */

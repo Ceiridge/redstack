@@ -90,6 +90,19 @@ export type RateDecl =
       readonly output: string;
       readonly outputPerInput: number;
       readonly maxPerHour: number;
+    })
+  /**
+   * A recipe with several ingredients, each arriving at its own port: crafts
+   * per hour are set by the scarcest ingredient (inflow ÷ amount per craft),
+   * at most maxCraftsPerHour.
+   */
+  | (RateMeta & {
+      readonly type: "crafts";
+      readonly inputs: ReadonlyArray<{ readonly from: string; readonly item: string; readonly perCraft: number }>;
+      readonly to: string;
+      readonly output: string;
+      readonly outputPerCraft: number;
+      readonly maxCraftsPerHour: number;
     });
 
 /** Maturity of a component. Only "game-tested" and above count as working. */
@@ -786,6 +799,31 @@ export class ComponentBuilder {
     this.#rates.push({ type: "converts", from, to, input, output, outputPerInput: conversion.outputPerInput ?? 1, maxPerHour, basis, ...(note ? { note } : {}) });
   }
 
+  /**
+   * A recipe with several ingredients. Each input names its port, its item and
+   * how many it takes per craft; several inputs may share an item (the same
+   * ingredient fed from several sides): they are pooled.
+   */
+  crafts(
+    inputs: ReadonlyArray<{ readonly from: string; readonly item: string; readonly perCraft: number }>,
+    to: string,
+    craft: { readonly output: string; readonly outputPerCraft?: number; readonly maxCraftsPerHour: number },
+    basis: RateBasis,
+    note?: string,
+  ): void {
+    if (inputs.length === 0) throw new Error(`${this.name}: crafts needs at least one input.`);
+    this.#rates.push({
+      type: "crafts",
+      inputs,
+      to,
+      output: craft.output,
+      outputPerCraft: craft.outputPerCraft ?? 1,
+      maxCraftsPerHour: craft.maxCraftsPerHour,
+      basis,
+      ...(note ? { note } : {}),
+    });
+  }
+
   consumes(item: string, perHour: number, basis: RateBasis, note?: string): void {
     this.#rates.push({ type: "consumes", item, perHour, basis, ...(note ? { note } : {}) });
   }
@@ -811,7 +849,14 @@ export class ComponentBuilder {
       throw new Error(`${this.name}: ${stillUnplaced.length} block(s) without position (${stillUnplaced.map((p) => p.block.id).join(", ")}).`);
     }
     for (const r of this.#rates) {
-      const used = r.type === "passes" || r.type === "converts" ? [r.from, r.to] : r.type === "consumes" ? [] : [r.port];
+      const used =
+        r.type === "passes" || r.type === "converts"
+          ? [r.from, r.to]
+          : r.type === "crafts"
+            ? [...r.inputs.map((i) => i.from), r.to]
+            : r.type === "consumes"
+              ? []
+              : [r.port];
       for (const n of used) if (!this.#ports.has(n)) throw new Error(`${this.name}: rate refers to unknown port "${n}".`);
     }
 

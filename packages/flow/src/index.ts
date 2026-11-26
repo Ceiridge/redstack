@@ -121,6 +121,30 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
         acc[r.output] = (acc[r.output] ?? 0) + Math.min(t, r.maxPerHour) * r.outputPerInput;
         converted[r.input] = (converted[r.input] ?? 0) + Math.min(t, r.maxPerHour);
       }
+      if (r.type === "crafts" && r.to === port) {
+        bases.add(r.basis);
+        // Pool each item over its ports, then the scarcest ingredient sets the pace
+        const supply = new Map<string, number>();
+        const need = new Map<string, number>();
+        for (const i of r.inputs) {
+          supply.set(i.item, (supply.get(i.item) ?? 0) + (inFlow(id, i.from)[i.item] ?? 0));
+          need.set(i.item, (need.get(i.item) ?? 0) + i.perCraft);
+        }
+        const possible = Math.min(...[...need].map(([item, n]) => supply.get(item)! / n));
+        if (possible > r.maxCraftsPerHour) {
+          bottlenecks.push({
+            instanceId: id,
+            from: r.inputs.map((i) => i.from).join("+"),
+            to: r.to,
+            inflowPerHour: possible,
+            capacityPerHour: r.maxCraftsPerHour,
+            utilization: possible / r.maxCraftsPerHour,
+          });
+        }
+        const crafts = Math.min(possible, r.maxCraftsPerHour);
+        acc[r.output] = (acc[r.output] ?? 0) + crafts * r.outputPerCraft;
+        for (const [item, n] of need) converted[item] = (converted[item] ?? 0) + crafts * n;
+      }
     }
     visiting.delete(k);
     // Several receivers: split evenly (approximation)
@@ -179,7 +203,10 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
       if (p.direction === "in") {
         const t = total(inFlows.get(k) ?? {});
         const handled = rs.some(
-          (r) => ((r.type === "passes" || r.type === "converts") && r.from === p.name) || (r.type === "stores" && r.port === p.name),
+          (r) =>
+            ((r.type === "passes" || r.type === "converts") && r.from === p.name) ||
+            (r.type === "crafts" && r.inputs.some((i) => i.from === p.name)) ||
+            (r.type === "stores" && r.port === p.name),
         );
         if (t > 0 && !handled) {
           diagnostics.push({

@@ -116,6 +116,29 @@ describe("redstone power", () => {
     assert.ok(r.hoppers.every((h) => !p.has(key(h.pos))));
   });
 
+  it("powers only the sides a dust points to", () => {
+    const at = (pos: Vec3, id: string, props: Record<string, string> = {}) => ({ pos, block: { id: `minecraft:${id}`, props } });
+    // A line along z: its sides along x stay unpowered
+    let p = poweredCells([at([0, 0, 0], "redstone_wire"), at([0, 0, 1], "redstone_wire"), at([0, 0, 2], "stone")]);
+    assert.ok(!p.has("1,0,0") && !p.has("-1,0,0"), "beside a line");
+    assert.ok(p.has("0,0,-1") && p.has("0,0,2") && p.has("0,-1,0"), "the line's ends and the block below");
+    // An L: points north and east only
+    p = poweredCells([at([0, 0, 0], "redstone_wire"), at([0, 0, -1], "redstone_wire"), at([1, 0, 0], "redstone_wire")]);
+    assert.ok(!p.has("-1,0,0") && !p.has("0,0,1"));
+    // A lone dust is a cross
+    p = poweredCells([at([0, 0, 0], "redstone_wire")]);
+    assert.ok(["1,0,0", "-1,0,0", "0,0,1", "0,0,-1"].every((k) => p.has(k)));
+    // A repeater beside it, not on its axis, does not connect: still a cross
+    p = poweredCells([at([0, 0, 0], "redstone_wire"), at([1, 0, 0], "repeater", { facing: "north" })]);
+    assert.ok(p.has("-1,0,0") && p.has("0,0,1"));
+    // A comparator does: the dust becomes a line towards it
+    p = poweredCells([at([0, 0, 0], "redstone_wire"), at([1, 0, 0], "comparator", { facing: "north" })]);
+    assert.ok(!p.has("0,0,1") && p.has("-1,0,0"));
+    // Dust climbing onto a block connects
+    p = poweredCells([at([0, 0, 0], "redstone_wire"), at([1, 0, 0], "stone"), at([1, 1, 0], "redstone_wire")]);
+    assert.ok(!p.has("0,0,1"), "the lower dust is a line towards the step");
+  });
+
   it("follows power through a solid block in front of an observer", () => {
     const blocks: Array<{ pos: Vec3; block: { id: string; props: Record<string, string> } }> = [
       { pos: [0, 0, 0] as Vec3, block: { id: "minecraft:observer", props: { facing: "west" } } },

@@ -7,7 +7,7 @@ import { REDSTONE_RELEVANT } from "./blocks.js";
 import type { Diagnostic } from "./diagnostics.js";
 import { DIR_VECTORS, type Dir, type Vec3, add, key, sub } from "./geometry.js";
 import { type BlockRegistry, accepts } from "./registry.js";
-import { isContainer } from "./routing.js";
+import { dustPoints, isContainer } from "./routing.js";
 
 export interface CheckOptions {
   /** Enables block-state and material checks */
@@ -169,8 +169,17 @@ const EMITS_ALL = new Set(
 );
 
 /** Can block `b` act on the cell `other` next to it (power it, watch it, push it)? */
-function acts(b: { pos: Vec3; block: { id: string; props: Readonly<Record<string, unknown>> } }, other: Vec3): boolean {
+function acts(
+  b: { pos: Vec3; block: { id: string; props: Readonly<Record<string, unknown>> } },
+  other: Vec3,
+  blockAt: (p: Vec3) => { readonly id: string; readonly facing?: string } | undefined,
+): boolean {
   const id = b.block.id;
+  // Dust powers the block below and the sides it points to
+  if (id === "minecraft:redstone_wire") {
+    const o = key(other);
+    return o === key(add(b.pos, [0, -1, 0])) || dustPoints(b.pos, blockAt).some((d) => key(add(b.pos, DIR_VECTORS[d])) === o);
+  }
   if (EMITS_ALL.has(id) || id.endsWith("_button") || id.endsWith("_pressure_plate")) return true;
   const facing = b.block.props["facing"];
   if (typeof facing !== "string" || !(facing in DIR_VECTORS)) return false;
@@ -194,6 +203,12 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
   const out: Diagnostic[] = [];
   const seen = new Set<string>();
   // Instances connected through ports touch on purpose (a hopper route ending in its dispenser)
+  const blockAt = (p: Vec3) => {
+    const x = a.blocks.get(key(p));
+    if (!x) return undefined;
+    const f = x.block.props["facing"];
+    return typeof f === "string" ? { id: x.block.id, facing: f } : { id: x.block.id };
+  };
   const linked = new Set(a.connections.flatMap((c) => [`${c.from.instanceId}|${c.to.instanceId}`, `${c.to.instanceId}|${c.from.instanceId}`]));
   for (const b of a.blocks.values()) {
     if (!REDSTONE_RELEVANT.has(b.block.id)) continue;
@@ -207,7 +222,7 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
       if (b.block.id === "minecraft:hopper" && n.block.id === "minecraft:hopper") continue;
       if (linked.has(`${b.instanceId}|${n.instanceId}`) && isContainer(b.block.id) && isContainer(n.block.id)) continue;
       // Two blocks that only react to signals cannot disturb each other
-      if (!acts(b, n.pos) && !acts(n, b.pos)) continue;
+      if (!acts(b, n.pos, blockAt) && !acts(n, b.pos, blockAt)) continue;
       out.push({
         severity: "warning",
         code: "possible-crosstalk",
