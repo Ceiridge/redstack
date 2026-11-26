@@ -7,8 +7,8 @@
 ![Minecraft 26.3](https://img.shields.io/badge/Minecraft-26.3-5b8731)
 
 <p align="center">
-  <img src="docs/images/factory-3d.png" alt="3D render of a small factory stepping down in three levels: a supply chest of logs feeds a crafter that makes planks, routed hoppers carry them to a second crafter that makes chests, and the chests go into a shulker loader whose full boxes end up in one chest." width="620">
-  <br><sub>Logs → planks → chests → shulker boxes, taken out at one chest: two <code>PatternCrafter</code>s and a <code>FastShulkerLoader</code>, every hopper in between laid by the router (<a href="examples/src/factory.ts">source</a>). The parts are game-tested; this chain as a whole is a design.</sub>
+  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests above single hoppers – positions, rotations and hoppers chosen by the layout search." width="720">
+  <br><sub>Two kelp cores, four supply chests – where they go, which way they face and every hopper: chosen by the solver. Measured in-game: <b>34,500 kelp/h</b> for one AFK player.</sub>
 </p>
 
 ```ts
@@ -44,7 +44,7 @@ PASS kelp-twin (fabric-carpet, 1 run(s))
 
 ## What it has found so far
 
-<p align="center"><img src="docs/images/kelp-twin-3d.png" alt="Two kelp cores facing an AFK player, placed by the layout search." width="460"><br><sub>Placed by the layout search, measured at 34,500 kelp/h.</sub></p>
+
 
 - A cactus design that passed every static check delivered **15 %** of its predicted yield in-game – items fell beside the collector. Two redesigns later: 5 hoppers per cactus instead of 11. [Story](docs/experiments/cactus.md)
 - A popular kelp farm has **two dispensers that never fire**; the rebuild uses 6 hoppers and 2 chests instead of 9 and 6, same output. [Benchmarks](docs/experiments/donut-benchmarks.md)
