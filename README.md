@@ -1,81 +1,70 @@
 # redstack
 
-**Minecraft farms as code – checked, modelled and tested on a real server before you build them.**
+**Write Minecraft farms as code. Let the solvers lay the hoppers, wires and layout. Know the real items per hour before you place a single block.**
 
 [![CI](https://github.com/Ceiridge/redstack/actions/workflows/ci.yml/badge.svg)](https://github.com/Ceiridge/redstack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Minecraft 26.3](https://img.shields.io/badge/Minecraft-26.3-5b8731)
 
 <p align="center">
-  <img src="docs/images/cactus-farm-3d.png" alt="3D render of an eight-cactus farm: cactus columns on a bed of hoppers, fence posts between the growth cells, a chest at the end of the hopper belt." width="760">
+  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests above single hoppers – positions, rotations and hoppers chosen by the layout search." width="720">
+  <br><sub>Two kelp cores, four supply chests – where they go, which way they face and every hopper: chosen by the solver. Measured in-game: <b>34,500 kelp/h</b> for one AFK player.</sub>
 </p>
 
 ```ts
-import { assembly } from "@redstack/core";
-import { CactusRow, Chest } from "@redstack/stdlib";
-
-export default assembly("cactus-farm", (f) => {
-  f.add(CactusRow({ cells: 16 })).to(Chest);
+const bonemeal = { item: "minecraft:bone_meal" };
+export default assembly("kelp-twin", (f) => {
+  const a = f.add(KelpBonemealCore).at([0, 0, 0]);
+  const b = f.add(KelpBonemealCore).free({ within: ground });   // the layout search decides
+  const player = f.add(PlayerPickup).free({ rotations: [0] });
+  f.connect(a.port("kelp"), player.port("in"));
+  f.connect(b.port("kelp"), player.port("in"));
+  for (const core of [a, b]) for (const side of ["West", "East"])
+    f.route(f.add(SupplyChest, bonemeal).free().port("out"), core.port(`bonemeal${side}`));  // hoppers solved
 });
 ```
 
 ```
-$ redstack all cactus-farm.js -o cactus-farm.litematic
-cactus-farm: 20 instances, 148 blocks (Vanilla 26.3)
-Yield (into storage):
-  minecraft:cactus: 44.3/h
-Storage:
-  Chest#1: 44.3/h, full after 39.0 h
-Written: cactus-farm.litematic
-Viewer: cactus-farm.html
-
-$ redstack test scenarios.js cactus-farm-16
-PASS cactus-farm-16 (fabric-carpet, 1 run(s))
-  measured minecraft:cactus: 44.7/h
+$ redstack test scenarios.js kelp-twin
+PASS kelp-twin (fabric-carpet, 1 run(s))
+  measured minecraft:kelp: 34,467/h
   ok   matches-flow-model: Measurement matches the model.
-  ok   no-ground-items: No items on the ground.
-  ok   no-stuck-hoppers: No hoppers backed up.
-  run 0: 288,001 ticks in 24.3 s, 0.084 ms server time per tick
 ```
 
-You describe a farm from reusable components. redstack checks it against Minecraft's block data, predicts the yield, exports a Litematica schematic, shows it in 3D – and runs it on a headless Fabric server to measure what it really produces and how much server time it costs. When model and measurement disagree, you find out *before* spending an evening building it.
+## What you get
 
-> **Status: early.** The pipeline works end to end; the component library is growing. Not an official Minecraft product; not approved by or associated with Mojang or Microsoft.
+| | |
+|---|---|
+| **Solvers instead of hand placement** | `route` lays hopper chains, trees and splits that obey every hopper rule. `wire` lays dust, repeaters and stairs that power nothing they should not and reports the delay in game ticks. `free()` + a branch-and-bound layout search places whole components, minimising size and hoppers. |
+| **A model that is checked against reality** | The flow model predicts items/h at every port, bottlenecks and fill times. Scenarios run the same design on a headless Fabric + Carpet server (or in milliseconds in the mc-tick engine) and compare. |
+| **A debugger that shows where it breaks** | Static checks (block states, overlaps, kept-clear space, crosstalk) and test findings – backed-up hoppers, lost items – drawn where they happen. |
+| **A library of measured parts** | Shulker loaders (18,000 items/h), a crafter for *any* recipe that can never craft the wrong thing, item filters, smelters, clocks with clean on/off switches, kelp and cactus modules. Every one passed an in-game test. [All components](docs/COMPONENTS.md) |
+| **Other people's farms, measured** | Import any `.litematic`/`.schem` (contents and crafter slots included), run it, find its limit. |
+| **Economy** | A farm as a process: in, out, build cost, break-even; an optimizer picks the most profitable farms per AFK spot. |
 
-## Features
+## What it has found so far
 
-- **Components that nest** – blocks, ports and a rate model; a cell, a row, a farm and a base compose the same way. Materials are slots ("any fence"), mirrored variants come for free.
-- **Transport, wiring and layout are solved, not drawn** – the router lays hopper chains, trees and splits that obey the hopper rules, and redstone wires (dust, repeaters, stairs) that touch nothing they should not and report their delay in game ticks; a branch-and-bound layout search places free components and minimises size and hopper count.
-- **Static checks** – block states against Minecraft's block table, overlaps, cells that must stay free, port alignment, redstone crosstalk.
-- **Flow model** – items per hour at every port, bottlenecks, storage fill times, recipes limited by their scarcest ingredient.
-- **In-game tests** – scenarios run on a Fabric + Carpet server (or in Nucleation's mc-tick engine), fast-forwarded and compared with the model: rates, lost items, backed-up hoppers, server time per tick.
-- **Viewer** – textured 3D model and an isometric debug view with flows and findings, including where a test found backed-up hoppers and lost items (`--report`).
-- **Import and export** – read any `.litematic`/`.schem` (block entities included) to measure proven designs; write `.litematic`/`.schem`.
-- **Economy** – a farm as a process (in, out, build cost, break-even); a mixed-integer optimizer picks the most profitable set of farms per AFK spot.
-- **Standard library** – game-tested farm parts: cactus rows, kelp core, shulker loaders and unloaders, item filter, smelters, crafters for any recipe, clocks with switches, and more ([list](docs/COMPONENTS.md)).
-
-## What testing finds
-
-The first cactus design passed every static check – and delivered **15 %** of the predicted yield in-game, because items fell beside the collector. Experiments found the cause, two redesigns fixed it ([story](docs/experiments/cactus.md)). Measuring other people's farms works the same way: a popular kelp farm turned out to have two dispensers that never fire, and a TNT cobblestone farm's real limit is how fast its storage takes items ([benchmarks](docs/experiments/donut-benchmarks.md), [water streams](docs/experiments/water-streams.md)).
+- A cactus design that passed every static check delivered **15 %** of its predicted yield in-game – items fell beside the collector. Two redesigns later: 5 hoppers per cactus instead of 11. [Story](docs/experiments/cactus.md)
+- A popular kelp farm has **two dispensers that never fire**; the rebuild uses 6 hoppers and 2 chests instead of 9 and 6, same output. [Benchmarks](docs/experiments/donut-benchmarks.md)
+- A 100-crafter slab factory tops out at **~42,000 slabs/h**, not because of its crafters: hoppers under the shallow end of a water stream trap items, so only the first loaders get any. Put them under deep water and four taps take **41,000/h instead of 18,000/h**. [Water streams](docs/experiments/water-streams.md)
 
 <p align="center">
-  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests on its sides above single hoppers." width="520">
+  <img src="docs/images/debugger-demo.svg" alt="Isometric debug view of a broken farm: flow labels along a hopper belt, red outlines on faulty blocks, an orange outline where a belt is overloaded." width="640">
+  <br><sub>The debug view: flows per hour along the belt, faulty blocks in red, an overloaded belt in orange.</sub>
 </p>
 
-### The debugger
+## Which tool for which job
 
-A deliberately broken farm ([source](examples/src/debugger-demo.ts)): a block next to a cactus, a hopper facing up, a chest connected to a belt end it is not at (red), and a supply chest pushing 12,000 items/h into a belt that moves 9,000/h (orange; throttled flow in red).
+- **A machine with a fixed shape** (a loader, a crafter core): a `component` with blocks placed by relations (`above`, `inFrontOf`, …), ports for what goes in and out, `keepClear` for space that must stay empty, and a rate (`passes`, `converts`, `crafts`, `produces`).
+- **Something repeated**: make the unit a component and chain it – `last = last.to(Slice)` – or give it a parameter.
+- **Items from A to B**: `route(out, in)`. Several outputs into one input: `collect`. One output to several inputs: `distribute`.
+- **A signal from A to B**: `wire(out, in, { minDelayTicks })`; keep cells free for later hopper routes with `avoid`.
+- **Parts whose position does not matter**: `.free({ within, rotations })` and let the layout search place them. Give it a tight box; it tells you if the result is proven optimal.
+- **A mirrored copy**: `mirrored(Type)`. **Other blocks**: material slots (`c.material(M.solid)`) instead of fixed ids.
+- **Turning things on and off**: every farm gets a switch, saved off – use `TorchClock` (lever, lock input) instead of a raw observer clock.
+- **Is it right?** `redstack check` → `flow` → `render` → a scenario on mc-tick for fast iteration → the Fabric server for the real number.
 
-<p align="center">
-  <img src="docs/images/debugger-demo.svg" alt="Isometric debug view of a broken cactus farm: flow labels growing from 2.8 to 16.6 items per hour along the belt, red outlines on three faulty blocks, an orange outline at the belt end and a red 4,500/h label." width="720">
-</p>
-
-```
-$ redstack check debugger-demo.js
-[error] reserved-cell @ (-1,2,-5): Cell (-1,2,-5) must stay free for CactusRow#1/CactusSlice#3, but Stray#1 places minecraft:stone there.
-[error] port-misaligned @ (1,1,-17): Connection HopperLine#1.out → Chest#2.in: target cell (1,1,-17) is not on the input.
-[error] invalid-block-state @ (3,1,-3): UpHopper#1: minecraft:hopper[facing=up] is invalid (allowed: down, north, south, west, east).
-```
+Concepts in depth: [docs/CONCEPTS.md](docs/CONCEPTS.md) · rules for contributors and AIs: [AGENTS.md](AGENTS.md)
 
 ## Getting started
 
