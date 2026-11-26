@@ -103,6 +103,12 @@ The router places transport between fixed components. Choosing the positions and
   - [ ] Crafter for shaped recipes with several ingredients (needs ordered input)
   - [x] Faster shulker loading: `FastShulkerLoader`, two hoppers per box, 18,000/h (game-tested). A TNT cobblestone farm (~208,000/h) needs 12 of them
   - [ ] Water-based collection; a TNT-duper module of our own
+  - [ ] Item transport modes beyond hopper chains, each a game-tested gadget with rate, cost and limits:
+    - water streams (items as entities: no 2.5/s limit, only level or downhill, a source every ≤ 8 blocks, a lift such as a soul-sand bubble column to go up, despawn after 5 minutes)
+    - ice (items sliding on packed/blue ice; whether ice under a water stream helps is to be measured)
+    - minecarts: chest/hopper minecarts for long distances and batches; a hopper minecart pulls 20 items/s from a container above (Java), unloading stays the bottleneck
+    - dropper chains and bubble columns for going up
+  - [ ] Router picks the transport mode per link: search over (position, mode) with mode-specific moves and transition gadgets (stream → collector), cost from materials, space and entity lag, constraint capacity ≥ flow from the flow model. Exact per link, heuristic across links (Steiner-like, NP-hard in general)
   - donut.build: its terms forbid scraping and its download endpoint blocks bots, so schematics are downloaded by hand and analysed with `redstack inspect` / `schematicComponent`; originals are not committed
 - [ ] Component docs written for AIs too: ports, rates, limits, known traps
 - [ ] Loop: write → stage 0 → stage 1 → test → repair
@@ -130,6 +136,6 @@ The router places transport between fixed components. Choosing the positions and
 
 ## Next steps
 1. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and the optimizer is only as good as its prices
-2. Faster shulker loader and a crafter for multi-ingredient shaped recipes
+2. A crafter for multi-ingredient shaped recipes
 3. Mirrored variants as options in the layout search (`free({ mirror: true })`)
-4. Water-based collection, our own TNT-duper module
+4. Water-based collection and transport modes in the router, our own TNT-duper module
