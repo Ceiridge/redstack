@@ -11,6 +11,7 @@
  *   redstack test    <scenarios.js> [name...]  in-game scenarios (see test-command.ts)
  *   redstack economy <module.js> [--prices f.json] [--fee 0.05] [--ms-per-tick n]
  *                                              in and out per hour, build cost, break-even, profit
+ *   redstack optimize <plan.json>              which farms how often at which AFK spot (see optimize-command.ts)
  *
  * Options: --format litematic|schem, --data-version <n>, --json, --rotation <0-3>, --title <text>, --no-3d
  *
@@ -38,6 +39,7 @@ import { analyzeFlow, formatFlowReport } from "@redstack/flow";
 import { defaultResourcePackPath, formatOf, meshGlb, nativeDataVersion, nucleationWriter, registry, schematicComponent } from "@redstack/nucleation";
 import { toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { economyCommand } from "./economy-command.js";
+import { optimizeCommand } from "./optimize-command.js";
 import { testCommand } from "./test-command.js";
 
 type Exported = Assembly | ComponentType<object> | ComponentSpec<object>;
@@ -61,7 +63,7 @@ async function loadAssembly(path: string): Promise<Assembly> {
 
 function usage(): never {
   console.error(
-    "usage: redstack <check|flow|build|render|all|inspect|test|economy> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json] [--prices file.json] [--fee x] [--ms-per-tick n]",
+    "usage: redstack <check|flow|build|render|all|inspect|test|economy|optimize> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json] [--prices file.json] [--fee x] [--ms-per-tick n]",
   );
   process.exit(2);
 }
@@ -89,13 +91,18 @@ async function main(): Promise<void> {
     },
   });
   const [cmd, target, ...rest] = positionals;
-  const commands = ["check", "flow", "build", "render", "all", "inspect", "test", "economy"];
+  const commands = ["check", "flow", "build", "render", "all", "inspect", "test", "economy", "optimize"];
   if (!cmd || !target || !commands.includes(cmd)) usage();
   const with3d = !values["no-3d"];
 
   if (cmd === "test") {
     const passed = await testCommand(target, rest, { json: values.json ?? false, outDir: values.out ?? "out/reports" });
     process.exit(passed ? 0 : 1);
+  }
+
+  if (cmd === "optimize") {
+    await optimizeCommand(target, loadAssembly, values.json ?? false);
+    return;
   }
 
   if (cmd === "inspect") {

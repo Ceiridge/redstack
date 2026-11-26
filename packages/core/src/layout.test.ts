@@ -89,6 +89,28 @@ describe("free instances in components", () => {
     assert.notEqual(m.rotation, 0);
   });
 
+  it("moves components docked onto a free one along with it (rigid group)", () => {
+    const Belt = component({ name: "Belt" }, (c) => {
+      const hs = c.line(B.hopper().outputTo("forward"), [0, 0, 0], "forward", 3);
+      c.input("in", hs);
+      c.output("out", hs[2]!.neighbor("forward"));
+      c.passes("in", "out", 9_000, "game-mechanic");
+    });
+    const r = assembly("group", (f) => {
+      const store = f.add(Store).at([0, 0, 0]);
+      f.fill(B.stone(), [-3, 0, -6], [3, 3, -6]); // a wall the group must not cut through
+      const src = f.add(Source).free({ within: { min: [-8, 1, -8], max: [8, 4, 8] } });
+      const belt = src.to(Belt);
+      f.connect(belt.port("out"), store.port("in"));
+    }).resolve();
+    assert.deepEqual(
+      runChecks(r).filter((d) => d.severity === "error"),
+      [],
+    );
+    const belt = r.instances.get("Belt#1")!;
+    assert.deepEqual(belt.ports.get("out")!.absCells.map(key), ["0,0,0"], "the belt (docked to the free source) ends in the store");
+  });
+
   it("explains a layout that cannot exist", () => {
     const r = assembly("impossible", (f) => {
       const pad = f.add(Pad).at([0, 0, 0]);

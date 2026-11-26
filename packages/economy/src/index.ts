@@ -273,3 +273,5 @@ export interface Optimizer {
   readonly id: string;
   optimize(ctx: EvaluationContext, options: { maxCountPerProcess: number }): Plan;
 }
+export * from "./milp.js";
+export * from "./optimize.js";

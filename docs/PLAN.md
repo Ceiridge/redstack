@@ -50,7 +50,7 @@ Each phase has an exit criterion. A phase is done when it is met.
 The router places transport between fixed components. Choosing the positions and rotations of the components themselves – the compact, nested layouts – is a combinatorial problem for a constraint solver.
 - [x] Constraint model: free components with candidate positions/rotations, no overlap, reserved space, touching ports, routable links; objective = weighted bounding-box volume + routed hoppers
 - [x] Exact branch and bound (router in the loop) with improvement moves when the budget runs out; reports proven-optimal vs best-found
-- [ ] Rigid groups: components docked onto a free one move with it (today they are placed afterwards, unchecked by the search)
+- [x] Rigid groups: components docked onto a free one (`to`, `attach`, `offsetFrom`) move and turn with it, and the search sees their blocks
 - [ ] SAT/CP-SAT backend behind the same model for larger instances (dependency policy applies), and a proof of optimality for more than toy sizes
 - [ ] Water streams and dropper elevators as further transport types for the router
 - [ ] Optimal Steiner trees for small collectors (exact search) instead of the greedy heuristic
@@ -64,7 +64,7 @@ The router places transport between fixed components. Choosing the positions and
 ### Phase 2b – Economy
 - [x] Processes, sites (AFK spots), accounts, mob cap sharing, market limits, plan evaluation
 - [x] Market interface, static price source (any SMP), Donut module
-- [ ] Optimizer: mixed-integer linear programming. Pick the solver after a security review
+- [x] Optimizer: mixed-integer linear program (counts per farm and site, buy/sell per item, AFK sites ≤ accounts, mob cap, load budget, market limits, build cost over a horizon); own two-phase simplex + branch and bound, no dependency; matches brute force on random instances; `redstack optimize`
 - [x] Bridge: assembly + flow model → `Process` (`@redstack/planning`): outputs into storage, converter inputs from supply chests (`external`), build cost from the bill of materials, break-even price ratio; `redstack economy`
 - [ ] Donut: converter for the published donutflipper price history (check licence)
 - [ ] Simulation distance: processes at one site must be loaded together
@@ -126,6 +126,6 @@ The router places transport between fixed components. Choosing the positions and
 - LP solver (phase 2b)
 
 ## Next steps
-1. Rigid groups in the layout search; more stdlib cores to arrange (a cactus row as a free unit)
-2. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and that needs data, not guesses; then the optimizer
+1. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and the optimizer is only as good as its prices
+2. Mirroring components (more layout options, symmetric farms)
 3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark

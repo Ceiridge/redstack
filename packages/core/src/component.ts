@@ -1012,28 +1012,78 @@ export class ComponentBuilder {
   #solveLayout(fixed: ReadonlyMap<string, { origin: Vec3; rotation: Rotation }>, diagnostics: Diagnostic[]): void {
     const free = this.#children.filter((c) => c._placement.kind === "free");
     if (free.length === 0) return;
-    const placedChildren = (extra: ReadonlyMap<string, ChildPlacement>): ChildTemplate[] =>
-      this.#children.flatMap((inst) => {
-        const p = fixed.get(inst.id) ?? extra.get(inst.id);
-        return p ? [{ id: inst.id, template: inst.template, origin: p.origin, rotation: p.rotation }] : [];
-      });
+
+    // Rigid groups: everything docked onto a free instance (directly or
+    // through others) moves and turns with it. Placements relative to the
+    // group's root, per rotation of the root.
+    const memberOf = new Map<string, Instance>(); // member id → root
+    const relative = new Map<string, Map<Rotation, Map<string, ChildPlacement>>>();
+    for (const root of free) {
+      const perRotation = new Map<Rotation, Map<string, ChildPlacement>>();
+      for (const rot of [0, 1, 2, 3] as const) {
+        const rel = new Map<string, ChildPlacement>([[root.id, { origin: [0, 0, 0], rotation: rot }]]);
+        for (let progress = true; progress; ) {
+          progress = false;
+          for (const inst of this.#children) {
+            if (rel.has(inst.id) || fixed.has(inst.id) || inst._placement.kind === "free") continue;
+            const pl = inst._placement;
+            const dep = pl.kind === "offset" ? pl.from : pl.kind === "attach" ? pl.target.instance : undefined;
+            if (!dep || !rel.has(dep.id)) continue;
+            const r = this.#tryPlace(inst, rel as Map<string, { origin: Vec3; rotation: Rotation }>, () => undefined);
+            if (r) {
+              rel.set(inst.id, r);
+              progress = true;
+            }
+          }
+        }
+        perRotation.set(rot, rel);
+      }
+      relative.set(root.id, perRotation);
+      for (const id of perRotation.get(0)!.keys()) memberOf.set(id, root);
+    }
+    const instById = new Map(this.#children.map((c) => [c.id, c]));
+    const placedChildren = (roots: ReadonlyMap<string, ChildPlacement>): ChildTemplate[] => {
+      const out: ChildTemplate[] = [];
+      for (const inst of this.#children) {
+        const f = fixed.get(inst.id);
+        if (f) out.push({ id: inst.id, template: inst.template, origin: f.origin, rotation: f.rotation });
+      }
+      for (const [rootId, p] of roots) {
+        for (const [id, rel] of relative.get(rootId)!.get(p.rotation)!) {
+          out.push({ id, template: instById.get(id)!.template, origin: add(p.origin, rel.origin), rotation: rel.rotation });
+        }
+      }
+      return out;
+    };
     const base = this.#occupancy(placedChildren(new Map()));
 
     const allFixed = [...base.blocks.values()].map((b) => b.pos);
     const lo = [0, 1, 2].map((i) => Math.min(0, ...allFixed.map((p) => p[i]!)));
     const hi = [0, 1, 2].map((i) => Math.max(0, ...allFixed.map((p) => p[i]!)));
+    const groupShape = (root: Instance, rotation: Rotation) => {
+      const blocks: Vec3[] = [];
+      const clear: Vec3[] = [];
+      const ports = new Map<string, Vec3[]>();
+      for (const [id, rel] of relative.get(root.id)!.get(rotation)!) {
+        const t = instById.get(id)!.template;
+        const sh = templateShape(t, rel.rotation);
+        for (const b of sh.blocks) blocks.push(add(rel.origin, b.pos));
+        for (const c of sh.clear) clear.push(add(rel.origin, c));
+        for (const [name, def] of t.portView) {
+          ports.set(id === root.id ? name : `${id}:${name}`, def.cells.map((v) => add(rel.origin, rotateVec(v, rel.rotation))));
+        }
+      }
+      return { blocks, clear, ports };
+    };
     const span = free.reduce((n, inst) => {
-      const s = templateShape(inst.template, 0).blocks.map((b) => b.pos);
+      const s = groupShape(inst, 0).blocks;
       return n + Math.max(1, ...[0, 1, 2].map((i) => Math.max(...s.map((p) => p[i]!)) - Math.min(...s.map((p) => p[i]!)) + 1));
     }, 0);
     const items: FreeItem[] = free.map((inst) => {
       const pl = inst._placement as Extract<PlacementSpec, { kind: "free" }>;
       const options = (pl.rotations ?? [0, 1, 2, 3]).map((r) => {
         const rotation = normalizeRotation(r);
-        const shape = templateShape(inst.template, rotation);
-        const ports = new Map<string, Vec3[]>();
-        for (const [name, def] of inst.template.portView) ports.set(name, def.cells.map((v) => rotateVec(v, rotation)));
-        return { rotation, shape: { blocks: shape.blocks.map((b) => b.pos), clear: shape.clear, ports } };
+        return { rotation, shape: groupShape(inst, rotation) };
       });
       const within = pl.within ?? this.#layoutOpts.within;
       return {
@@ -1044,13 +1094,13 @@ export class ComponentBuilder {
       };
     });
 
-    // Links: connections and routes that involve a free child
-    const isFree = (r: PortRef) => !!r.instance && r.instance._placement.kind === "free";
+    // Links: connections and routes that involve a free group
     const fixedChildren = placedChildren(new Map());
     const end = (r: RouteEnd): LayoutEnd | undefined => {
       if (Array.isArray(r)) return { cells: [r as Vec3] };
       const ref = r as PortRef;
-      if (isFree(ref)) return { item: ref.instance!.id, port: ref.port };
+      const root = ref.instance ? memberOf.get(ref.instance.id) : undefined;
+      if (root) return { item: root.id, port: root === ref.instance ? ref.port : `${ref.instance!.id}:${ref.port}` };
       const cells = this.#portCells(fixedChildren, ref);
       return cells ? { cells } : undefined;
     };
@@ -1058,7 +1108,8 @@ export class ComponentBuilder {
     const link = (kind: LayoutLink["kind"], a: RouteEnd, b: RouteEnd) => {
       const from = end(a);
       const to = end(b);
-      if (from && to && ("item" in from || "item" in to)) links.push({ kind, from, to });
+      const same = from && to && "item" in from && "item" in to && from.item === to.item;
+      if (from && to && !same && ("item" in from || "item" in to)) links.push({ kind, from, to });
     };
     for (const c of this.#connections) link("touch", c.from, c.to);
     for (const r of this.#routes) for (const f of r.from) for (const t of r.to) link("route", f, t);

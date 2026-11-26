@@ -88,7 +88,7 @@ export const CactusRow = component({ name: "CactusRow", params: { cells: 8 } }, 
 
 **Transport is solved, not drawn.** `route(from, to)` lays the shortest hopper chain between two ports, `collect([...], to)` merges several outputs into one input with a shared hopper tree, `distribute(from, [...])` feeds several inputs through branches. The router knows the hopper rules: hoppers never carry items up, never sit under a foreign container (they would drain it) or above a foreign hopper, never where another hopper or dropper pushes in, never next to steady redstone power, and never in space a component keeps clear. Impossible routes are reported with the reason ("hoppers cannot move items up …"). The generated hoppers are a component with a rate like any other, so the flow model sees them – one hopper moves 9,000 items/h, and a supply line that starves a machine shows up as a bottleneck.
 
-**Layout is searched, not drawn either.** Mark children `free()` and the layout search picks their positions and rotations: nothing may overlap or sit in kept-clear space, connected ports must touch, routes must be possible – and the bounding box and the hopper count are minimised (weights adjustable). It is a branch-and-bound search that calls the router for every candidate, followed by improvement moves; it says whether the result is proven optimal or the best within its budget. For two kelp cores and four supply chests it finds the layout below in about a second: both cores face one AFK player, every chest sits right above the single hopper its dispenser needs (4 hoppers – the minimum), measured at **34,500 kelp/h** for one player.
+**Layout is searched, not drawn either.** Mark children `free()` and the layout search picks their positions and rotations (anything docked onto a free child moves with it): nothing may overlap or sit in kept-clear space, connected ports must touch, routes must be possible – and the bounding box and the hopper count are minimised (weights adjustable). It is a branch-and-bound search that calls the router for every candidate, followed by improvement moves; it says whether the result is proven optimal or the best within its budget. For two kelp cores and four supply chests it finds the layout below in about a second: both cores face one AFK player, every chest sits right above the single hopper its dispenser needs (4 hoppers – the minimum), measured at **34,500 kelp/h** for one player.
 
 <p align="center">
   <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests on its sides above single hoppers." width="560">
@@ -119,7 +119,7 @@ for (const core of [a, b]) for (const side of ["West", "East"])
 | In-game tests | placed on a Fabric + Carpet server, fast-forwarded, measured, compared to the model; lag per tick; positions of lost items | seconds–minutes |
 | Viewer | textured 3D model and an isometric debug view with flows and findings | instant |
 | Export | `.litematic` / `.schem` | instant |
-| Economy | the farm as a process: in and out per hour, build cost, break-even price ratio; profit per hour for a plan, with AFK spots, shared mob cap and market limits | ms |
+| Economy | the farm as a process: in and out per hour, build cost, break-even price ratio; the most profitable plan over several farms and AFK spots (mob cap, load, accounts, market limits) | ms |
 
 ### The debugger
 
@@ -159,6 +159,7 @@ redstack all     <module.js> -o farm.litematic
 redstack inspect farm.litematic [-o farm.html]  # analyse any schematic: size, materials, checks, viewer
 redstack test    <scenarios.js> [name...]      # in-game tests
 redstack economy <module.js> [--prices p.json] # in/out per hour, build cost, break-even, profit
+redstack optimize <plan.json>                  # which farms how often at which AFK spot
 ```
 
 ```
@@ -172,6 +173,8 @@ Breaks even when minecraft:kelp sells for at least 1.075 × the price of minecra
 ```
 
 With `--prices` (a JSON price list, see [`market-static`](packages/market-static/src/index.ts); [`examples/prices/example.json`](examples/prices/example.json) has invented numbers) it adds revenue, purchases, profit per hour and payback time.
+
+`redstack optimize` takes several farms, AFK spots, accounts and a price list ([example](examples/plan.json)) and solves a mixed-integer program for the most profitable plan: how many of each farm at which spot, respecting the number of accounts, the mob cap and load budget per spot, how much the market absorbs, and build cost spread over a horizon. Farms can feed each other (a bone meal farm supplying kelp cores). The solver is built in and checked against brute force; the plan is re-rated by the same evaluation used for hand-made plans.
 
 `redstack` is `node apps/cli/dist/main.js`. A module's default export is an assembly or a component. See [`examples/src`](examples/src).
 
