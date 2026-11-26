@@ -7,6 +7,8 @@
  *
  *   small-fast-kelp-farm.litematic         donut.build "Small Fast Kelp Farm"
  *   tnt-duper-cobblestone-farm.litematic   donut.build "TNT Duper Cobblestone Farm"
+ *   kelp-farm-v2.litematic                 schemat.io tu7vbz, "kelp farm V2 /4 shulkers of kelp blocks per hour" by Fsaulpaugh
+ *   tuff-deepslate-slab-crafter.litematic  shulkr.com, "Mauschu's Tuff and Deepslate Slab Crafter" (design Mauschu, schematic Shadow)
  *
  * Run with: pnpm test:game:benchmarks [name...]
  */
@@ -95,9 +97,68 @@ export function tntCobbleBenchmark(): Scenario {
   });
 }
 
+const KELP_ITEMS = ["minecraft:kelp", "minecraft:dried_kelp", "minecraft:dried_kelp_block", "minecraft:bone_meal", "minecraft:bone_block"];
+
+/**
+ * Kelp farm V2 (Fsaulpaugh): bone blocks are crafted into bone meal, four
+ * dispensers grow the kelp, 60 smokers dry it, crafters press dried kelp
+ * blocks. Bone blocks go into the top-left chests.
+ */
+export function kelpV2Benchmark(lever = false): Scenario {
+  const Farm = load("kelp-farm-v2.litematic", "KelpFarmV2");
+  const a = assembly("kelp-farm-v2", (f) => void f.add(Farm)).resolve();
+  return scenario(a, {
+    name: lever ? "kelp-farm-v2-levers" : "kelp-farm-v2",
+    // Saved without the ground: the kelp needs a block below it
+    world: { terrain: "flat" },
+    requires: ["items", "block-updates", "redstone", "fake-player"],
+    durationTicks: 24_000,
+    warmupTicks: 6_000,
+    sampleEveryTicks: 2_000,
+    placement: process.env["REDSTACK_PLACEMENT"] === "updates" ? "with-updates" : "strict",
+    actions: [
+      ...[5, 6, 7, 8].map((x) => ({ type: "insert" as const, at: [x, 9, 3] as Vec3, item: "minecraft:bone_block", count: 27 * 64 })),
+      ...(lever ? [{ type: "use" as const, at: [11, 9, 10] as Vec3 }, { type: "use" as const, at: [12, 9, 11] as Vec3 }] : []),
+      // Once bone meal has reached the dispensers, kick the observer clock:
+      // retuning the note block it watches gives it a pulse
+      { type: "wait", ticks: 3_000 },
+      { type: "set", at: [9, 2, 3], block: "minecraft:note_block[instrument=basedrum,note=2,powered=false]" },
+    ],
+    measure: { containers: positionsOf(a.blocks.values(), "minecraft:chest"), items: KELP_ITEMS },
+  });
+}
+
+/**
+ * Mauschu's Tuff and Deepslate Slab Crafter: 100 crafters (three in a row),
+ * items carried by water, 25 shulker loaders. Raw blocks go into the input
+ * chests (the row of double chests at y=8, z=12–13).
+ */
+export function slabCrafterBenchmark(lever = false, item = "minecraft:cobbled_deepslate"): Scenario {
+  const Farm = load("tuff-deepslate-slab-crafter.litematic", "SlabCrafter");
+  const a = assembly("slab-crafter", (f) => void f.add(Farm)).resolve();
+  const slab = item === "minecraft:tuff" ? "minecraft:tuff_slab" : "minecraft:cobbled_deepslate_slab";
+  return scenario(a, {
+    name: lever ? "slab-crafter-lever" : "slab-crafter",
+    requires: ["items", "block-updates", "redstone", "fake-player"],
+    durationTicks: 12_000,
+    warmupTicks: 2_000,
+    sampleEveryTicks: 1_000,
+    placement: "strict",
+    actions: [
+      ...Array.from({ length: 6 }, (_, i) => ({ type: "insert" as const, at: [1 + i, 8, 12] as Vec3, item, count: 27 * 64 })),
+      ...(lever ? [{ type: "use" as const, at: [32, 5, 4] as Vec3 }] : []),
+    ],
+    measure: { containers: positionsOf(a.blocks.values(), "minecraft:chest", "minecraft:shulker_box"), items: [item, slab, "minecraft:shulker_box"] },
+  });
+}
+
 export const scenarios: Record<string, () => Scenario> = {
   "small-fast-kelp-farm": kelpBenchmark,
   "tnt-duper-cobblestone-farm": tntCobbleBenchmark,
+  "kelp-farm-v2": () => kelpV2Benchmark(),
+  "kelp-farm-v2-levers": () => kelpV2Benchmark(true),
+  "slab-crafter": () => slabCrafterBenchmark(),
+  "slab-crafter-lever": () => slabCrafterBenchmark(true),
 };
 
 /** A hopper under a water stream, passing what lands in it straight down. */
