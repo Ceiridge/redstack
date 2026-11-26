@@ -183,3 +183,83 @@ export const ShulkerUnloader = component(
     void dispenser;
   },
 );
+
+/**
+ * Shulker loader with two filling hoppers: 18,000 items/h.
+ *
+ * The piston sits on top and pushes the full box down; it breaks and drops
+ * through a gap onto the collecting hopper. The dispenser places boxes from
+ * the north, so west and south are free for two filling hoppers. Full
+ * detection as in ShulkerLoader (box − 14 from a reference dropper).
+ * Game-tested on Fabric 26.3: 250 items per 1,000 ticks (18,000/h), the box
+ * swap costs under 10 ticks.
+ *
+ * Inputs: `in` (two hoppers, from above), `boxes` (empty boxes, into the top
+ * of the dispenser's hopper). Output: `out`, full boxes.
+ */
+export const FastShulkerLoader = component(
+  {
+    name: "FastShulkerLoader",
+    description: "Shulker loader with two filling hoppers (18,000 items/h). Inputs: in, boxes. Output: out.",
+    status: "game-tested",
+    params: { box: "minecraft:shulker_box", reference: "minecraft:cobblestone" },
+  },
+  (c, { box, reference }) => {
+    const solid = () => B.of(c.material(M.solid));
+    const wire = () => B.of("minecraft:redstone_wire", {});
+    c.block(B.of(box, { facing: "up" })).at([0, 0, 0]);
+    c.keepClear([0, -1, 0]);
+    // Piston above, dispenser north (fed from above), two filling hoppers west and south
+    c.block(B.piston().pushing("down")).at([0, 1, 0]);
+    c.block(B.of("minecraft:dispenser", { facing: "south", triggered: false })).at([0, 0, -1]);
+    const boxHopper = c.block(B.hopper().outputTo("down")).at([0, 1, -1]);
+    const west = c.block(B.hopper().outputTo("east")).at([-1, 0, 0]);
+    const south = c.block(B.hopper().outputTo("north")).at([0, 0, 1]);
+    // The broken box falls through the gap onto the collector
+    c.block(B.hopper().outputTo("south")).at([0, -2, 0]);
+    const out = c.block(B.hopper().outputTo("south")).at([0, -2, 1]);
+
+    // Full detection: box − reference(14)
+    c.block(B.comparator("subtract").signalTowards("east")).at([1, 0, 0]);
+    c.block(solid()).at([1, -1, 0]);
+    c.block(B.comparator("compare").signalTowards("south")).at([1, 0, -1]);
+    c.block(solid()).at([1, -1, -1]);
+    c.block(B.of("minecraft:dropper", { facing: "up", triggered: false }).containing([reference, itemsForSignal(14, 9)])).at([1, 0, -2]);
+    c.block(B.repeater(1).signalTowards("east")).at([2, 0, 0]);
+    c.block(solid()).at([2, -1, 0]);
+
+    // Up to the piston: dust stairs to a repeater that powers the block above the piston
+    c.block(wire()).at([3, 0, 0]);
+    c.block(solid()).at([3, -1, 0]);
+    c.block(solid()).at([3, 0, 1]);
+    c.block(wire()).at([3, 1, 1]);
+    c.block(solid()).at([2, 1, 1]);
+    c.block(wire()).at([2, 2, 1]);
+    c.block(solid()).at([2, 1, 0]);
+    c.block(wire()).at([2, 2, 0]);
+    c.block(solid()).at([1, 1, 0]);
+    c.block(B.repeater(1).signalTowards("west")).at([1, 2, 0]);
+    c.block(solid()).at([0, 2, 0]);
+
+    // Re-arm the dispenser 8 game ticks later, through the block below it
+    c.block(B.repeater(4).signalTowards("north")).at([3, 0, -1]);
+    c.block(solid()).at([3, -1, -1]);
+    for (const p of [[3, 0, -2], [3, 0, -3]] as const) {
+      c.block(wire()).at(p);
+      c.block(solid()).at([p[0], -1, p[2]]);
+    }
+    for (const p of [[2, -1, -3], [1, -1, -3], [0, -1, -3]] as const) {
+      c.block(wire()).at(p);
+      c.block(solid()).at([p[0], -2, p[2]]);
+    }
+    c.block(B.repeater(1).signalTowards("south")).at([0, -1, -2]);
+    c.block(solid()).at([0, -2, -2]);
+    c.block(solid()).at([0, -1, -1]);
+
+    c.input("in", [west, south], { description: "items into the top of either filling hopper" });
+    c.input("boxes", boxHopper, { item: box, description: "empty shulker boxes" });
+    c.output("out", out.neighbor("south"), { description: "full shulker boxes" });
+    c.passes("in", "out", 2 * hopperItemsPerHour(c.env), "game-mechanic", "two filling hoppers; the output counts items inside boxes");
+    c.note("Keep the dispenser stocked with empty boxes.");
+  },
+);

@@ -8,6 +8,7 @@ import {
   Chest,
   Crafter,
   DoubleChest,
+  FastShulkerLoader,
   HopperLine,
   ItemFilter,
   ShulkerLoader,
@@ -156,6 +157,29 @@ export function shulkerLoaderScenario(): Scenario {
   });
 }
 
+/** Fast shulker loader: a supply chest above each filling hopper, two boxes. */
+export function fastShulkerLoaderScenario(): Scenario {
+  const r = assembly("fast-shulker-loader", (f) => {
+    const loader = f.add(FastShulkerLoader).at([0, 0, 0]);
+    for (const at of [[-1, 1, 0], [0, 1, 1]] as const) f.connect(f.add(SupplyChest).at(at).port("out"), loader.port("in"));
+    loader.to(Chest);
+  }).resolve();
+  const chest = r.instances.get("Chest#1")!.origin;
+  return scenario(r, {
+    // Two chests hold exactly two boxes; end shortly after the second is full
+    durationTicks: 14_200,
+    sampleEveryTicks: 200,
+    actions: [
+      { type: "insert", at: [-1, 1, 0], item: "minecraft:cobblestone", count: 27 * 64 },
+      { type: "insert", at: [0, 1, 1], item: "minecraft:cobblestone", count: 27 * 64 },
+      { type: "insert", at: [0, 1, -1], item: "minecraft:shulker_box", count: 4, stack: 1 },
+    ],
+    // The box being filled and the chest of full boxes
+    measure: { containers: [[0, 0, 0], chest], items: ["minecraft:cobblestone", "minecraft:shulker_box"] },
+    expectations: [{ type: "rate-at-least", item: "minecraft:cobblestone", perHour: 17_000 }, { type: "no-ground-items" }],
+  });
+}
+
 /** Shulker unloader: two full boxes in, items (and empty boxes) out into a double chest. */
 export function shulkerUnloaderScenario(): Scenario {
   const r = assembly("shulker-unloader", (f) => {
@@ -290,6 +314,7 @@ export const scenarios: Record<string, () => Scenario> = {
   "hopper-collector": hopperCollector,
   "shulker-loader": shulkerLoaderScenario,
   "shulker-unloader": shulkerUnloaderScenario,
+  "fast-shulker-loader": fastShulkerLoaderScenario,
   "item-filter": itemFilterScenario,
   smelter: smelterScenario,
   "crafter-chest": crafterScenario,

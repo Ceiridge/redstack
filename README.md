@@ -57,7 +57,7 @@ Every number comes from repeated in-game runs; the full story, including the wro
 
 redstack reads existing schematics, so proven designs can be measured instead of trusted. The *Small Fast Kelp Farm* from donut.build turned out to be a 1 : 1 bone meal → kelp converter (18,000/h) in which two of its four dispensers never fire successfully. The rebuild keeps its redstone core, drops the idle dispensers and lets the router lay the supply hoppers – **6 hoppers and 2 chests instead of 9 hoppers and 6 chests**, same measured output. Details, including a TNT-duper cobblestone farm at ≈ 208,000/h: [docs/experiments/donut-benchmarks.md](docs/experiments/donut-benchmarks.md).
 
-That TNT farm, with its storage hall replaced by shulker loaders that the layout search places and the router connects, packs 103,000 cobblestone/h into boxes with 12 loaders (model 108,000) – and shows the real limit: one loader takes 9,000/h, so the full output would need about 23.
+That TNT farm, with its storage hall replaced by shulker loaders that the layout search places and the router connects, packs 103,000 cobblestone/h into boxes with 12 loaders (model 108,000) – and shows the real limit: one `ShulkerLoader` takes 9,000/h, so the full output would need about 23 (or 12 of the two-hopper `FastShulkerLoader`).
 
 <p align="center">
   <img src="docs/images/kelp-farm-3d.png" alt="3D render of the rebuilt kelp farm: a glass water column above a note block and observers, two supply chests on either side whose hoppers lead down into the two dispensers beside the kelp." width="560">
@@ -207,6 +207,7 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | `PlayerPickup` | game-tested | the AFK player as an item sink, counted in tests |
 | `free()` + layout search | game-tested | two kelp cores and four chests placed by the search: 34,500 kelp/h measured, model 33,500 |
 | `ShulkerLoader` | game-tested | fires only on a completely full box (subtract comparator against a reference); 3 boxes, nothing lost, 9,000 items/h |
+| `FastShulkerLoader` | game-tested | piston on top pushes the full box down, the dispenser places from the side, so two hoppers fill each box: 18,000 items/h, box swap under 10 ticks |
 | `ShulkerUnloader` | game-tested | breaks the box only when it just became empty (observer + locked repeater); 8,700 items/h |
 | `ItemFilter` | game-tested | classic hopper sorter: took all coal from a mixed line, not one cobblestone |
 | `SmelterArray` | game-tested | 4 furnaces: 1,440 stone/h after the warm-up (= model) |

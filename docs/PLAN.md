@@ -99,9 +99,9 @@ The router places transport between fixed components. Choosing the positions and
 **Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
 ### Phase 5 – Standard library and AI loop
-- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs. Game-tested so far: HopperLine, Chest, DoubleChest, SupplyChest, CactusRow, KelpBonemealCore, PlayerPickup, ShulkerLoader, ShulkerUnloader, ItemFilter, SmelterArray, Crafter (single-ingredient and shapeless recipes)
+- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs. Game-tested so far: HopperLine, Chest, DoubleChest, SupplyChest, CactusRow, KelpBonemealCore, PlayerPickup, ShulkerLoader, FastShulkerLoader, ShulkerUnloader, ItemFilter, SmelterArray, Crafter (single-ingredient and shapeless recipes)
   - [ ] Crafter for shaped recipes with several ingredients (needs ordered input)
-  - [ ] Faster shulker loading (several hoppers per box) – a TNT cobblestone farm makes ~208,000/h, one loader takes 9,000/h
+  - [x] Faster shulker loading: `FastShulkerLoader`, two hoppers per box, 18,000/h (game-tested). A TNT cobblestone farm (~208,000/h) needs 12 of them
   - [ ] Water-based collection; a TNT-duper module of our own
   - donut.build: its terms forbid scraping and its download endpoint blocks bots, so schematics are downloaded by hand and analysed with `redstack inspect` / `schematicComponent`; originals are not committed
 - [ ] Component docs written for AIs too: ports, rates, limits, known traps
