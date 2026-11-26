@@ -33,8 +33,23 @@ first one and items stall between them. Three designs in proven farms keep a lon
   Fences work the same way: their post sits in the middle of the cell, the line between the lanes stays free.
 - **A one-block drop** every 8 blocks (classic; costs height).
 
-Scenarios for the sign joint, the drop, and fence or pocket sources are in the experiments file; they have not been
-run yet.
+Measured (16 cells, 6,000 items/h fed, the rest in transit at the end):
+
+| Joint | Arrives at the end |
+|---|---|
+| Wall sign over packed ice, new source | 5,680/h |
+| One-block drop | 5,680/h |
+| Waterlogged fence in the side wall of a one-wide channel (at cell 7 or 8) | 0 – items stall where the two waters meet |
+| Plain source in a side pocket | 0 – same |
+
+So a second source beside a **one-wide** channel does not work; it needs the two-wide lane, where the old and the
+new water never touch.
+
+## Taps under deep water
+
+Four taps under the first cells after the source (water 7–4 deep) plus one at the end, 60,000 items/h fed:
+**41,200/h** taken – against 18,000/h for four taps at the shallow end. In deep water the items float over full
+hoppers and reach the next one; collectors and distributors belong right behind a source.
 
 ## Two designs studied
 
