@@ -18,7 +18,10 @@
     "@redstack/nucleation": "workspace:*",
     "@redstack/viz": "workspace:*",
     "@redstack/testing": "workspace:*",
-    "@redstack/backend-fabric": "workspace:*"
+    "@redstack/backend-fabric": "workspace:*",
+    "@redstack/economy": "workspace:*",
+    "@redstack/market-static": "workspace:*",
+    "@redstack/planning": "workspace:*"
   },
   "license": "MIT"
 }

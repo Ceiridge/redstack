@@ -31,18 +31,23 @@ export const Chest = component(
 );
 
 /**
- * Test fixture: a chest that hoppers below it can pull from. Its modelled
- * rate is whatever the test fills in, so flow models of test setups have a source.
+ * A chest that hoppers below it can pull from, refilled from outside the farm
+ * (by a player, or by a test). Its rate is the most it can deliver; the
+ * economy counts what the farm actually uses of it as a purchased input.
  */
 export const SupplyChest = component(
   {
     name: "SupplyChest",
-    description: "Chest feeding the block below it (hoppers pull from containers above). Test fixture.",
+    description: "Chest refilled from outside, feeding the block below it (hoppers pull from containers above).",
     status: "game-tested",
     params: { item: "minecraft:cobblestone", perHour: 1_000_000 },
   },
   (c, { item, perHour }) => {
     const chest = c.block(B.chest());
-    c.output("out", chest.down, { item, rate: { perHour, basis: "estimate", note: "test supply, limited by what pulls from it" } });
+    c.output("out", chest.down, {
+      item,
+      external: true,
+      rate: { perHour, basis: "estimate", note: "refilled from outside; limited by what pulls from it" },
+    });
   },
 );

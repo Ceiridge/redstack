@@ -6,7 +6,8 @@ Modules build on each other. Arrows mean "depends on". No module knows the modul
 apps/cli ─┬─> nucleation ──> core           (+ nucleation, third-party)
           ├─> flow ────────> core
           ├─> viz ──> core, flow
-          └─> backend-fabric ──> testing, core, flow
+          ├─> backend-fabric ──> testing, core, flow
+          └─> planning ──> core, flow, economy
 
 stdlib ──> core                        (tests also use flow, nucleation)
 examples ──> core, stdlib, testing, viz, nucleation
@@ -17,6 +18,7 @@ backend-fabric ──> testing           (later: backend-paper, backend-mc-tick)
 economy                               (standalone: knows nothing about blocks)
 market-static ──> economy
 market-donut ──> economy, market-static   (other SMPs: their own market-* module)
+planning ──> core, flow, economy          (assembly → process)
 
 logic (planned) ──> core              (redstone logic, CPUs)
 ```

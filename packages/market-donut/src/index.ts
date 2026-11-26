@@ -28,7 +28,7 @@ export const donutProfile: MarketProfile = {
   notes: [
     "Public API disabled (as of Nov 2026)",
     "/shop removed in June 2026",
-    "Exploits and dupes risk a ban – the discovery track excludes them by default",
+    "TNT duping is in use and allowed according to a player (Nov 2026, unverified); other dupes and exploits risk a ban",
   ],
 };
 

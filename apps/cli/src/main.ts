@@ -9,6 +9,8 @@
  *   redstack all     <module.js> -o <file>     all of the above
  *   redstack inspect <file.litematic> [-o x.html]   analyse an existing schematic
  *   redstack test    <scenarios.js> [name...]  in-game scenarios (see test-command.ts)
+ *   redstack economy <module.js> [--prices f.json] [--fee 0.05] [--ms-per-tick n]
+ *                                              in and out per hour, build cost, break-even, profit
  *
  * Options: --format litematic|schem, --data-version <n>, --json, --rotation <0-3>, --title <text>, --no-3d
  *
@@ -35,6 +37,7 @@ import {
 import { analyzeFlow, formatFlowReport } from "@redstack/flow";
 import { defaultResourcePackPath, formatOf, meshGlb, nativeDataVersion, nucleationWriter, registry, schematicComponent } from "@redstack/nucleation";
 import { toHtml, toSvg, toVizModel } from "@redstack/viz";
+import { economyCommand } from "./economy-command.js";
 import { testCommand } from "./test-command.js";
 
 type Exported = Assembly | ComponentType<object> | ComponentSpec<object>;
@@ -57,7 +60,9 @@ async function loadAssembly(path: string): Promise<Assembly> {
 }
 
 function usage(): never {
-  console.error("usage: redstack <check|flow|build|render|all|inspect|test> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json]");
+  console.error(
+    "usage: redstack <check|flow|build|render|all|inspect|test|economy> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json] [--prices file.json] [--fee x] [--ms-per-tick n]",
+  );
   process.exit(2);
 }
 
@@ -78,10 +83,13 @@ async function main(): Promise<void> {
       rotation: { type: "string", default: "0" },
       title: { type: "string" },
       "no-3d": { type: "boolean", default: false },
+      prices: { type: "string" },
+      fee: { type: "string" },
+      "ms-per-tick": { type: "string" },
     },
   });
   const [cmd, target, ...rest] = positionals;
-  const commands = ["check", "flow", "build", "render", "all", "inspect", "test"];
+  const commands = ["check", "flow", "build", "render", "all", "inspect", "test", "economy"];
   if (!cmd || !target || !commands.includes(cmd)) usage();
   const with3d = !values["no-3d"];
 
@@ -128,6 +136,15 @@ async function main(): Promise<void> {
   }
   if (cmd === "flow" || cmd === "all") {
     console.log(values.json ? JSON.stringify({ ...flow, ports: Object.fromEntries(flow.ports), bases: [...flow.bases] }, null, 2) : formatFlowReport(flow));
+  }
+  if (cmd === "economy") {
+    await economyCommand(assembly, flow, {
+      json: values.json ?? false,
+      ...(values.prices ? { prices: values.prices } : {}),
+      ...(values.fee ? { fee: Number(values.fee) } : {}),
+      ...(values["ms-per-tick"] ? { msPerTick: Number(values["ms-per-tick"]) } : {}),
+    });
+    return;
   }
   if (cmd === "render") {
     if (!values.out) usage();

@@ -23,12 +23,21 @@ importers:
       '@redstack/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@redstack/economy':
+        specifier: workspace:*
+        version: link:../../packages/economy
       '@redstack/flow':
         specifier: workspace:*
         version: link:../../packages/flow
+      '@redstack/market-static':
+        specifier: workspace:*
+        version: link:../../packages/market-static
       '@redstack/nucleation':
         specifier: workspace:*
         version: link:../../packages/nucleation
+      '@redstack/planning':
+        specifier: workspace:*
+        version: link:../../packages/planning
       '@redstack/testing':
         specifier: workspace:*
         version: link:../../packages/testing
@@ -102,6 +111,18 @@ importers:
       nucleation:
         specifier: 0.12.3
         version: 0.12.3
+
+  packages/planning:
+    dependencies:
+      '@redstack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@redstack/economy':
+        specifier: workspace:*
+        version: link:../economy
+      '@redstack/flow':
+        specifier: workspace:*
+        version: link:../flow
 
   packages/stdlib:
     dependencies:

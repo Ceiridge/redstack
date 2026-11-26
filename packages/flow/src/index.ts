@@ -44,6 +44,10 @@ export interface FlowAnalysis {
   readonly inputsPerHour: ItemRates;
   /** What arrives in storage */
   readonly storedPerHour: ItemRates;
+  /** What converters use up (e.g. bone meal turned into kelp) */
+  readonly convertedPerHour: ItemRates;
+  /** Items that enter the design from outside (supply chests) */
+  readonly externalItems: ReadonlySet<string>;
   /** Where the numbers come from – "estimate" means backed by neither game mechanics nor measurement */
   readonly bases: ReadonlySet<RateBasis>;
   readonly diagnostics: readonly Diagnostic[];
@@ -65,6 +69,8 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
   const outFlows = new Map<string, ItemRates>();
   const inFlows = new Map<string, ItemRates>();
   const bottlenecks: Bottleneck[] = [];
+  const converted: Record<string, number> = {};
+  const external = new Set<string>();
   const visiting = new Set<string>();
 
   // Index connections by target and source port
@@ -94,6 +100,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
     for (const r of rates(id)) {
       if (r.type === "produces" && r.port === port) {
         acc[r.item] = (acc[r.item] ?? 0) + r.perHour;
+        if (r.external) external.add(r.item);
         bases.add(r.basis);
       }
       if (r.type === "passes" && r.to === port) {
@@ -112,6 +119,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
           bottlenecks.push({ instanceId: id, from: r.from, to: r.to, inflowPerHour: t, capacityPerHour: r.maxPerHour, utilization: t / r.maxPerHour });
         }
         acc[r.output] = (acc[r.output] ?? 0) + Math.min(t, r.maxPerHour) * r.outputPerInput;
+        converted[r.input] = (converted[r.input] ?? 0) + Math.min(t, r.maxPerHour);
       }
     }
     visiting.delete(k);
@@ -209,7 +217,7 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
     });
   }
 
-  return { ports, bottlenecks, sinks, inputsPerHour: inputs, storedPerHour: stored, bases, diagnostics };
+  return { ports, bottlenecks, sinks, inputsPerHour: inputs, storedPerHour: stored, convertedPerHour: converted, externalItems: external, bases, diagnostics };
 }
 
 /** Compact text report, e.g. for the CLI or as context for an AI. */

@@ -119,7 +119,7 @@ for (const core of [a, b]) for (const side of ["West", "East"])
 | In-game tests | placed on a Fabric + Carpet server, fast-forwarded, measured, compared to the model; lag per tick; positions of lost items | seconds–minutes |
 | Viewer | textured 3D model and an isometric debug view with flows and findings | instant |
 | Export | `.litematic` / `.schem` | instant |
-| Economy | profit per hour for a plan, with AFK spots, shared mob cap and market limits | ms |
+| Economy | the farm as a process: in and out per hour, build cost, break-even price ratio; profit per hour for a plan, with AFK spots, shared mob cap and market limits | ms |
 
 ### The debugger
 
@@ -158,7 +158,20 @@ redstack render  <module.js> -o farm.html     # viewer (3D if assets exist) – 
 redstack all     <module.js> -o farm.litematic
 redstack inspect farm.litematic [-o farm.html]  # analyse any schematic: size, materials, checks, viewer
 redstack test    <scenarios.js> [name...]      # in-game tests
+redstack economy <module.js> [--prices p.json] # in/out per hour, build cost, break-even, profit
 ```
+
+```
+$ redstack economy kelp-farm.js
+Out:
+  minecraft:kelp: 16,740/h
+In:
+  minecraft:bone_meal: 18,000/h
+Build: 52 items (23 glass, 6 hopper, 6 observer, …)
+Breaks even when minecraft:kelp sells for at least 1.075 × the price of minecraft:bone_meal.
+```
+
+With `--prices` (a JSON price list, see [`market-static`](packages/market-static/src/index.ts); [`examples/prices/example.json`](examples/prices/example.json) has invented numbers) it adds revenue, purchases, profit per hour and payback time.
 
 `redstack` is `node apps/cli/dist/main.js`. A module's default export is an assembly or a component. See [`examples/src`](examples/src).
 
@@ -200,6 +213,7 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | [`viz`](packages/viz) | viewer: 3D, isometric debug view, SVG |
 | [`testing`](packages/testing), [`backend-fabric`](packages/backend-fabric) | scenarios, reports, model comparison; Fabric + Carpet server over RCON |
 | [`economy`](packages/economy), [`market-static`](packages/market-static), [`market-donut`](packages/market-donut) | processes, AFK spots, markets, plan evaluation |
+| [`planning`](packages/planning) | a farm's flow model as an economic process (inputs, outputs, build cost, break-even) |
 | [`apps/cli`](apps/cli) | the `redstack` command |
 
 Design rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Roadmap: [docs/PLAN.md](docs/PLAN.md) · Supply-chain policy: [docs/SECURITY.md](docs/SECURITY.md)

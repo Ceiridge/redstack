@@ -65,7 +65,7 @@ The router places transport between fixed components. Choosing the positions and
 - [x] Processes, sites (AFK spots), accounts, mob cap sharing, market limits, plan evaluation
 - [x] Market interface, static price source (any SMP), Donut module
 - [ ] Optimizer: mixed-integer linear programming. Pick the solver after a security review
-- [ ] Bridge: assembly + flow model → `Process` automatically
+- [x] Bridge: assembly + flow model → `Process` (`@redstack/planning`): outputs into storage, converter inputs from supply chests (`external`), build cost from the bill of materials, break-even price ratio; `redstack economy`
 - [ ] Donut: converter for the published donutflipper price history (check licence)
 - [ ] Simulation distance: processes at one site must be loaded together
 
@@ -127,5 +127,5 @@ The router places transport between fixed components. Choosing the positions and
 
 ## Next steps
 1. Rigid groups in the layout search; more stdlib cores to arrange (a cactus row as a free unit)
-2. Bridge assembly → process, then the optimizer (phase 2b) – the kelp farm needs it: it only pays if kelp sells above bone meal
+2. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and that needs data, not guesses; then the optimizer
 3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark

@@ -1,0 +1,15 @@
+{
+  "source": "example – invented numbers, not market data",
+  "channel": "example",
+  "asOf": "2026-11-26T00:00:00Z",
+  "items": {
+    "minecraft:kelp": { "sell": 1.2 },
+    "minecraft:bone_meal": { "buy": 1.0 },
+    "minecraft:cactus": { "sell": 2.0 },
+    "minecraft:hopper": { "buy": 40 },
+    "minecraft:glass": { "buy": 1 },
+    "minecraft:observer": { "buy": 30 },
+    "minecraft:chest": { "buy": 10 },
+    "minecraft:dispenser": { "buy": 25 }
+  }
+}

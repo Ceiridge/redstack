@@ -70,7 +70,14 @@ interface RateMeta {
 }
 
 export type RateDecl =
-  | (RateMeta & { readonly type: "produces"; readonly port: string; readonly item: string; readonly perHour: number })
+  | (RateMeta & {
+      readonly type: "produces";
+      readonly port: string;
+      readonly item: string;
+      readonly perHour: number;
+      /** Brought in from outside the design (a chest a player refills): an input for the economy, not a product */
+      readonly external?: boolean;
+    })
   | (RateMeta & { readonly type: "passes"; readonly from: string; readonly to: string; readonly maxPerHour: number })
   | (RateMeta & { readonly type: "stores"; readonly port: string; readonly capacityItems: number })
   | (RateMeta & { readonly type: "consumes"; readonly item: string; readonly perHour: number })
@@ -433,6 +440,8 @@ export interface PortOptions {
 export interface OutputOptions extends PortOptions {
   /** Shorthand for `produces(port, item, perHour, basis, note)`; needs `item` */
   readonly rate?: { readonly perHour: number; readonly basis: RateBasis; readonly note?: string };
+  /** The items come from outside the design (refilled by a player), see `produces` */
+  readonly external?: boolean;
 }
 
 /** Where a route starts or ends: a port, or a cell in this component's frame. */
@@ -691,16 +700,20 @@ export class ComponentBuilder {
   }
 
   output(name: string, targets: CellsArg, opts: OutputOptions = {}): void {
-    const { rate, ...rest } = opts;
+    const { rate, external, ...rest } = opts;
     this.#addPort({ name, direction: "out", kind: rest.kind ?? "items", cells: toCells(targets), ...withoutKind(rest) });
     if (rate) {
       if (!rest.item) throw new Error(`${this.name}: output "${name}" with a rate needs an item.`);
-      this.produces(name, rest.item, rate.perHour, rate.basis, rate.note);
+      this.produces(name, rest.item, rate.perHour, rate.basis, rate.note, external ? { external } : {});
     }
   }
 
-  produces(port: string, item: string, perHour: number, basis: RateBasis, note?: string): void {
-    this.#rates.push({ type: "produces", port, item, perHour, basis, ...(note ? { note } : {}) });
+  /**
+   * Items appear at an output: grown, generated – or, with `external`, put in
+   * from outside (a supply chest), which the economy then counts as an input.
+   */
+  produces(port: string, item: string, perHour: number, basis: RateBasis, note?: string, opts: { readonly external?: boolean } = {}): void {
+    this.#rates.push({ type: "produces", port, item, perHour, basis, ...(note ? { note } : {}), ...(opts.external ? { external: true } : {}) });
   }
 
   passes(from: string, to: string, maxPerHour: number, basis: RateBasis, note?: string): void {

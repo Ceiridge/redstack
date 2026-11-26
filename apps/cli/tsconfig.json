@@ -25,6 +25,15 @@
     },
     {
       "path": "../../packages/backend-fabric"
+    },
+    {
+      "path": "../../packages/economy"
+    },
+    {
+      "path": "../../packages/market-static"
+    },
+    {
+      "path": "../../packages/planning"
     }
   ]
 }
