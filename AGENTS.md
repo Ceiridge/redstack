@@ -34,6 +34,9 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 - **Let the router lay transport.** Connect ports with `c.route`, `c.collect` or `c.distribute` instead of placing hoppers by hand, unless the exact hopper layout is the point of the component (a collection bed under crops). Declare item paths and player cells with `keepClear` so the router avoids them.
 - **Reserve space explicitly.** Cells that must stay free (growth space, fall paths, cactus neighbours) go into `c.keepClear(...)`; the checks then catch anything built into them.
 - **Declare rates.** Every component declares `produces`/`passes`/`stores`/`consumes` with a basis, so the flow model and the economy can use it.
+- **Every farm gets an on/off switch.** A lever (or an input port of kind `signal`) that stops the machine cleanly: clocks held, dispensers and pistons idle, crafters not firing, nothing spilling. Players need it to stop lag, refill, repair and AFK elsewhere, and tests need it to start a farm from a known state. Mark it in the design (a `signal` port named `enable`, or a note), say which position means "on", and make "off" the state the schematic is saved in.
+- **Clocks start clean.** A clock must not depend on how it was placed: a design that breaks with two pulses in its loop (the kelp farms in `docs/experiments/donut-benchmarks.md` and `water-streams.md`) needs a switch that holds the loop and releases exactly one pulse, or a clock that cannot carry more than one (torch clock, comparator clock). Use the stdlib clocks and state their period in game ticks.
+- **Timing is part of the interface.** A signal port says what it carries (a level, a pulse of n game ticks, a period); `c.wire` reports the delay it adds. Check that pulses are long enough for what they drive (a piston needs 1 game tick to extend, a crafter fires on the rising edge, a hopper lock holds for the whole pulse) and that a refill (water: 5 game ticks per block) fits into the period.
 - **Respect the layers.** `core` has no dependencies; third-party libraries only in adapter packages; server- or market-specific code only in its own module (see `docs/ARCHITECTURE.md`).
 
 ## 3. Workflow for a new farm or component
@@ -46,7 +49,7 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 5. Add an in-game scenario (`examples/src/scenarios.ts`) with `matches-flow-model`, `no-ground-items`, `no-stuck-hoppers` as appropriate, and run it (`pnpm test:game <name>`, server setup in `packages/backend-fabric/README.md`).
 6. If model and measurement disagree: experiment, explain, then fix the design **or** calibrate the rate model with the measured value – never just widen the tolerance.
 7. Unit tests for any new logic; `pnpm test` must pass.
-8. Update docs: component table in `README.md`, `docs/PLAN.md` checkboxes, experiment write-up if any.
+8. Update docs: `docs/COMPONENTS.md`, `docs/PLAN.md` checkboxes, experiment write-up if any. Keep `README.md` an overview: features, how it works, where things are – details belong in `docs/`.
 
 ## 4. Code quality
 

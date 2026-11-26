@@ -40,91 +40,27 @@ PASS cactus-farm-16 (fabric-carpet, 1 run(s))
 
 You describe a farm from reusable components. redstack checks it against Minecraft's block data, predicts the yield, exports a Litematica schematic, shows it in 3D – and runs it on a headless Fabric server to measure what it really produces and how much server time it costs. When model and measurement disagree, you find out *before* spending an evening building it.
 
-> **Status: early.** The pipeline works end to end; the component library is small (see [Components](#components)). Not an official Minecraft product; not approved by or associated with Mojang or Microsoft.
+> **Status: early.** The pipeline works end to end; the component library is growing. Not an official Minecraft product; not approved by or associated with Mojang or Microsoft.
 
-## Why it is worth it: one example
+## Features
 
-The first cactus design here passed every static check – and delivered **15 %** of the predicted yield in-game, because items fell beside the collector. Experiments located the problem, a redesign fixed it, and a reviewer's idea (share the fence between neighbours) led to a third design:
+- **Components that nest** – blocks, ports and a rate model; a cell, a row, a farm and a base compose the same way. Materials are slots ("any fence"), mirrored variants come for free.
+- **Transport and layout are solved, not drawn** – the router lays hopper chains, trees and splits that obey the hopper rules; a branch-and-bound layout search places free components and minimises size and hopper count.
+- **Static checks** – block states against Minecraft's block table, overlaps, cells that must stay free, port alignment, redstone crosstalk.
+- **Flow model** – items per hour at every port, bottlenecks, storage fill times, recipes limited by their scarcest ingredient.
+- **In-game tests** – scenarios run on a Fabric + Carpet server (or in Nucleation's mc-tick engine), fast-forwarded and compared with the model: rates, lost items, backed-up hoppers, server time per tick.
+- **Viewer** – textured 3D model and an isometric debug view with flows and findings.
+- **Import and export** – read any `.litematic`/`.schem` (block entities included) to measure proven designs; write `.litematic`/`.schem`.
+- **Economy** – a farm as a process (in, out, build cost, break-even); a mixed-integer optimizer picks the most profitable set of farms per AFK spot.
+- **Standard library** – game-tested farm parts: cactus rows, kelp core, shulker loaders and unloaders, item filter, smelters, crafters for any recipe, and more ([list](docs/COMPONENTS.md)).
 
-| Design | Hoppers per cactus | Length per cactus | Measured survival | Server time per tick |
-|---|---|---|---|---|
-| Ring | 11 | 3 blocks | 0.88 | 0.094 ms |
-| **Row** | **5** | **2 blocks** | 0.84 | **0.082 ms** |
+## What testing finds
 
-Every number comes from repeated in-game runs; the full story, including the wrong turns, is in [docs/experiments/cactus.md](docs/experiments/cactus.md).
-
-### Learning from real farms
-
-redstack reads existing schematics, so proven designs can be measured instead of trusted. The *Small Fast Kelp Farm* from donut.build turned out to be a 1 : 1 bone meal → kelp converter (18,000/h) in which two of its four dispensers never fire successfully. The rebuild keeps its redstone core, drops the idle dispensers and lets the router lay the supply hoppers – **6 hoppers and 2 chests instead of 9 hoppers and 6 chests**, same measured output. Details, including a TNT-duper cobblestone farm at ≈ 208,000/h: [docs/experiments/donut-benchmarks.md](docs/experiments/donut-benchmarks.md).
-
-That TNT farm, with its storage hall replaced by shulker loaders that the layout search places and the router connects, packs 103,000 cobblestone/h into boxes with 12 loaders (model 108,000) – and shows the real limit: one `ShulkerLoader` takes 9,000/h, so the full output would need about 23 (or 12 of the two-hopper `FastShulkerLoader`).
-
-<p align="center">
-  <img src="docs/images/kelp-farm-3d.png" alt="3D render of the rebuilt kelp farm: a glass water column above a note block and observers, two supply chests on either side whose hoppers lead down into the two dispensers beside the kelp." width="560">
-</p>
-
-```ts
-export default assembly("kelp-farm", (f) => {
-  const core = f.add(KelpBonemealCore).at([0, 0, 0]);
-  const west = f.add(SupplyChest, { item: "minecraft:bone_meal" }).at([-1, 3, 1]);
-  const east = f.add(SupplyChest, { item: "minecraft:bone_meal" }).at([3, 3, 3]);
-  f.route(west.port("out"), core.port("bonemealWest"));   // hoppers placed and oriented by the router
-  f.route(east.port("out"), core.port("bonemealEast"));
-  f.connect(core.port("kelp"), f.add(PlayerPickup).at([1, 1, 5]).port("in"));
-});
-```
-
-## Concepts
-
-**Components nest.** A component has blocks, ports and a rate model, and may contain other components. A farm is just the top-level component, so a cell, a row of cells, a farm and a whole base compose the same way.
-
-```ts
-export const CactusRow = component({ name: "CactusRow", params: { cells: 8 } }, (c, { cells }) => {
-  let last = c.add(CactusRowCap);
-  for (let i = 0; i < cells; i++) last = last.to(CactusSlice);  // dock slice after slice
-  c.expose("out", last.port("out"));                             // the row's output is the last slice's
-});
-```
-
-**Relations, not coordinates.** Blocks are placed with `above`, `inFrontOf`, `rightOf`, …; the first block is the anchor. `to()` docks the next component onto the only matching output → input and returns it, so pipelines read left to right: `supply.to(HopperLine({ length: 8 })).to(Chest)`.
-
-**Transport is solved, not drawn.** `route(from, to)` lays the shortest hopper chain between two ports, `collect([...], to)` merges several outputs into one input with a shared hopper tree, `distribute(from, [...])` feeds several inputs through branches. The router knows the hopper rules: hoppers never carry items up, never sit under a foreign container (they would drain it) or above a foreign hopper, never where another hopper or dropper pushes in, never next to steady redstone power (dust counts only towards the sides it actually points to), and never in space a component keeps clear. Impossible routes are reported with the reason ("hoppers cannot move items up …"). The generated hoppers are a component with a rate like any other, so the flow model sees them – one hopper moves 9,000 items/h, and a supply line that starves a machine shows up as a bottleneck.
-
-**Layout is searched, not drawn either.** Mark children `free()` and the layout search picks their positions and rotations (anything docked onto a free child moves with it): nothing may overlap or sit in kept-clear space, connected ports must touch, routes must be possible – and the bounding box and the hopper count are minimised (weights adjustable). It is a branch-and-bound search that calls the router for every candidate, followed by improvement moves; it says whether the result is proven optimal or the best within its budget. For two kelp cores and four supply chests it finds the layout below in about a second: both cores face one AFK player, every chest sits right above the single hopper its dispenser needs (4 hoppers – the minimum), measured at **34,500 kelp/h** for one player.
+The first cactus design passed every static check – and delivered **15 %** of the predicted yield in-game, because items fell beside the collector. Experiments found the cause, two redesigns fixed it ([story](docs/experiments/cactus.md)). Measuring other people's farms works the same way: a popular kelp farm turned out to have two dispensers that never fire, and a TNT cobblestone farm's real limit is how fast its storage takes items ([benchmarks](docs/experiments/donut-benchmarks.md), [water streams](docs/experiments/water-streams.md)).
 
 <p align="center">
-  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests on its sides above single hoppers." width="560">
+  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests on its sides above single hoppers." width="520">
 </p>
-
-```ts
-const a = f.add(KelpBonemealCore).at([0, 0, 0]);
-const b = f.add(KelpBonemealCore).free({ within: ground });          // where and which way: up to the search
-const player = f.add(PlayerPickup).free({ rotations: [0] });
-f.connect(a.port("kelp"), player.port("in"));
-f.connect(b.port("kelp"), player.port("in"));
-for (const core of [a, b]) for (const side of ["West", "East"])
-  f.route(f.add(SupplyChest, supply).free({ rotations: [0] }).port("out"), core.port(`bonemeal${side}`));
-```
-
-**Mirror images for free.** `c.add(mirrored(KelpBonemealCore))` mirrors a component east ↔ west, children and block states included (stair shapes, door hinges, chest halves, rails, sign rotation). A mirrored design is marked `unverified` until tested, because redstone update order is direction-dependent; the mirrored kelp farm measures the same as the original.
-
-**Materials, not hard-coded blocks.** Components ask for a slot such as "any fence" (`#minecraft:fences`) or "any plain solid block" (`#redstack:solid`) with a default. Build with what you have: `assembly(name, build, { materials: { cactusBreaker: "minecraft:spruce_fence" } })` – the checks verify the choice against Minecraft's block tags.
-
-**Environments.** Rates depend on the game version and server settings (random tick speed, Spigot/Paper hopper and growth settings, simulation distance). Presets: `vanilla`, `paperDefaults`, `donutGuess` – guesses are labelled as such. Test backends refuse environments they cannot reproduce instead of measuring the wrong thing.
-
-**Every number has an origin** (`game-mechanic`, `measured`, `estimate`) and every component a maturity (`draft` → `unverified` → `game-tested` → `server-verified`).
-
-## What it checks and measures
-
-| Stage | What | Speed |
-|---|---|---|
-| Static checks | block states and materials against Minecraft's block table, overlaps, blocks in cells that must stay free, port alignment and kinds, possible redstone crosstalk | ms |
-| Flow model | items per hour at every port, bottlenecks, storage fill times, required inputs | ms |
-| In-game tests | placed on a Fabric + Carpet server, fast-forwarded, measured, compared to the model; lag per tick; positions of lost items | seconds–minutes |
-| Engine tests | the same scenarios in mc-tick, Nucleation's headless tick engine, for redstone and item logistics (`--backend mc-tick`) | milliseconds |
-| Viewer | textured 3D model and an isometric debug view with flows and findings | instant |
-| Export | `.litematic` / `.schem` | instant |
-| Economy | the farm as a process: in and out per hour, build cost, break-even price ratio; the most profitable plan over several farms and AFK spots (mob cap, load, accounts, market limits) | ms |
 
 ### The debugger
 
@@ -167,20 +103,6 @@ redstack economy <module.js> [--prices p.json] # in/out per hour, build cost, br
 redstack optimize <plan.json>                  # which farms how often at which AFK spot
 ```
 
-```
-$ redstack economy kelp-farm.js
-Out:
-  minecraft:kelp: 16,740/h
-In:
-  minecraft:bone_meal: 18,000/h
-Build: 52 items (23 glass, 6 hopper, 6 observer, …)
-Breaks even when minecraft:kelp sells for at least 1.075 × the price of minecraft:bone_meal.
-```
-
-With `--prices` (a JSON price list, see [`market-static`](packages/market-static/src/index.ts); [`examples/prices/example.json`](examples/prices/example.json) has invented numbers) it adds revenue, purchases, profit per hour and payback time.
-
-`redstack optimize` takes several farms, AFK spots, accounts and a price list ([example](examples/plan.json)) and solves a mixed-integer program for the most profitable plan: how many of each farm at which spot, respecting the number of accounts, the mob cap and load budget per spot, how much the market absorbs, and build cost spread over a horizon. Farms can feed each other (a bone meal farm supplying kelp cores). The solver is built in and checked against brute force; the plan is re-rated by the same evaluation used for hand-made plans.
-
 `redstack` is `node apps/cli/dist/main.js`. A module's default export is an assembly or a component. See [`examples/src`](examples/src).
 
 ### In-game tests
@@ -190,32 +112,9 @@ pnpm server setup ../redstack-server --accept-eula   # pinned, checksum-verified
 pnpm server start ../redstack-server
 cp ../redstack-server/.env .env
 pnpm test:game
-pnpm test:game:benchmarks   # third-party designs; see examples/src/benchmarks.ts for the files
 ```
 
-Four in-game hours take about 25 seconds. Backends implement one interface; the Fabric + Carpet server is the first. Details: [packages/backend-fabric](packages/backend-fabric/README.md).
-
-## Components
-
-| Component | Status | Evidence |
-|---|---|---|
-| `CactusRow` (`CactusSlice`, `CactusRowCap`) | game-tested | survival per breaker, model matches a 16-cell farm |
-| `CactusCell` | game-tested | the earlier ring design, kept for comparison |
-| `HopperLine` | game-tested | 9,000 items/h measured = model |
-| `Chest`, `SupplyChest` | game-tested | storage and test fixture in every scenario |
-| `KelpBonemealCore` | game-tested | 18,000 bone meal/h → ≈ 16,800 kelp/h, model matches |
-| `PlayerPickup` | game-tested | the AFK player as an item sink, counted in tests |
-| `free()` + layout search | game-tested | two kelp cores and four chests placed by the search: 34,500 kelp/h measured, model 33,500 |
-| `ShulkerLoader` | game-tested | fires only on a completely full box (subtract comparator against a reference); 3 boxes, nothing lost, 9,000 items/h |
-| `FastShulkerLoader` | game-tested | piston on top pushes the full box down, the dispenser places from the side, so two hoppers fill each box: 18,000 items/h, box swap under 10 ticks |
-| `ShulkerUnloader` | game-tested | breaks the box only when it just became empty (observer + locked repeater); 8,700 items/h |
-| `ItemFilter` | game-tested | classic hopper sorter: took all coal from a mixed line, not one cobblestone |
-| `SmelterArray` | game-tested | 4 furnaces: 1,440 stone/h after the warm-up (= model) |
-| `Crafter` | game-tested | fires only on a full grid, so the recipe cannot be pre-empted: planks → 1,127 chests/h, zero buttons, plates or sticks |
-| `PatternCrafter` | game-tested | any recipe, shaped with several ingredients too, fed from up to four sides. A seeded grid keeps the pattern, and it fires only while every feed is backed up, so a slot never runs empty: pistons 2,000/h, chests 3,600/h, nothing but the result, clean stop and restart when an ingredient runs out |
-| `route` / `collect` / `distribute` | game-tested | three chests merged past a wall and a decoy chest: 9,000/h = model, nothing drained from the decoy |
-
-*game-tested* = passes on the Fabric test server with Minecraft 26.3; not yet confirmed on a production server.
+Four in-game hours take about 25 seconds. Details: [packages/backend-fabric](packages/backend-fabric/README.md).
 
 ## Project layout
 
@@ -226,12 +125,12 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | [`stdlib`](packages/stdlib) | components and environment presets |
 | [`nucleation`](packages/nucleation) | adapter for [Nucleation](https://github.com/Schem-at/Nucleation): schematic I/O, block registry, 3D meshes |
 | [`viz`](packages/viz) | viewer: 3D, isometric debug view, SVG |
-| [`testing`](packages/testing), [`backend-fabric`](packages/backend-fabric) | scenarios, reports, model comparison; Fabric + Carpet server over RCON |
+| [`testing`](packages/testing), [`backend-fabric`](packages/backend-fabric), [`backend-mctick`](packages/backend-mctick) | scenarios, reports, model comparison; Fabric + Carpet server over RCON; Nucleation's tick engine |
 | [`economy`](packages/economy), [`market-static`](packages/market-static), [`market-donut`](packages/market-donut) | processes, AFK spots, markets, plan evaluation |
 | [`planning`](packages/planning) | a farm's flow model as an economic process (inputs, outputs, build cost, break-even) |
 | [`apps/cli`](apps/cli) | the `redstack` command |
 
-Design rules: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Roadmap: [docs/PLAN.md](docs/PLAN.md) · Supply-chain policy: [docs/SECURITY.md](docs/SECURITY.md)
+More: [concepts](docs/CONCEPTS.md) · [components](docs/COMPONENTS.md) · [architecture](docs/ARCHITECTURE.md) · [roadmap](docs/PLAN.md) · [experiments](docs/experiments) · [supply-chain policy](docs/SECURITY.md)
 
 ## Contributing
 
