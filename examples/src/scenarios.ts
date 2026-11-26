@@ -12,6 +12,10 @@ import {
   HopperLine,
   ItemFilter,
   PatternCrafter,
+  PulseCounter,
+  EdgeDetector,
+  TorchClock,
+  torchClockPeriod,
   type Recipe,
   ShulkerLoader,
   ShulkerUnloader,
@@ -289,6 +293,51 @@ export function crafterScenario(): Scenario {
   });
 }
 
+/** The PatternCrafter's switch: the lever on its clock (saved off) */
+const CRAFTER_ON = { type: "use" as const, at: [-4, 0, -6] as Vec3 };
+
+/** TorchClock: pulses counted by a dropper into a chest; pulses/h must match the period. */
+export function torchClockScenario(period: number): Scenario {
+  const r = assembly(`torch-clock-${period}`, (f) => {
+    const clock = f.add(TorchClock({ period })).at([0, 0, 0]);
+    f.connect(clock.port("out"), f.add(PulseCounter).at([3, 0, 0]).port("in"));
+  }).resolve();
+  const actual = torchClockPeriod(period);
+  const perHour = 72_000 / actual;
+  return scenario(r, {
+    durationTicks: Math.min(4_000, actual * 400),
+    warmupTicks: 200,
+    sampleEveryTicks: 200,
+    actions: [{ type: "use", at: [0, 1, 0] }],
+    measure: { containers: [[4, 0, 0]], items: ["minecraft:cobblestone"] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:cobblestone", perHour: perHour * 0.98 },
+      { type: "rate-at-most", item: "minecraft:cobblestone", perHour: perHour * 1.02 },
+    ],
+  });
+}
+
+/** EdgeDetector behind a TorchClock: a pulse on both edges, so twice the clock's rate. */
+export function edgeDetectorScenario(): Scenario {
+  const r = assembly("edge-detector", (f) => {
+    const clock = f.add(TorchClock({ period: 40 })).at([0, 0, 0]);
+    const edges = f.add(EdgeDetector).at([3, 0, 0]);
+    f.connect(clock.port("out"), edges.port("in"));
+    f.connect(edges.port("out"), f.add(PulseCounter).at([5, 0, 0]).port("in"));
+  }).resolve();
+  return scenario(r, {
+    durationTicks: 4_000,
+    warmupTicks: 200,
+    sampleEveryTicks: 200,
+    actions: [{ type: "use", at: [0, 1, 0] }],
+    measure: { containers: [[6, 0, 0]], items: ["minecraft:cobblestone"] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:cobblestone", perHour: 3_528 },
+      { type: "rate-at-most", item: "minecraft:cobblestone", perHour: 3_672 },
+    ],
+  });
+}
+
 /**
  * PatternCrafter: pistons from four supply chests (planks, cobblestone, iron,
  * redstone). Runs until the cobblestone runs out: the crafter must stop
@@ -313,7 +362,10 @@ export function patternCrafterScenario(resume = false, recipe: Recipe = PatternC
       durationTicks: 12_000,
       warmupTicks: 1_500,
       sampleEveryTicks: 500,
-      actions: Object.keys(feeds).map((face) => ({ type: "insert" as const, at: supplies[face]!, item: "minecraft:oak_planks", count: 27 * 64 })),
+      actions: [
+        ...Object.keys(feeds).map((face) => ({ type: "insert" as const, at: supplies[face]!, item: "minecraft:oak_planks", count: 27 * 64 })),
+        CRAFTER_ON,
+      ],
       measure: { containers: [chest], items: ["minecraft:chest", ...wrongPlanks] },
       expectations: [
         { type: "rate-at-least", item: "minecraft:chest", perHour: 3_200 },
@@ -336,7 +388,7 @@ export function patternCrafterScenario(resume = false, recipe: Recipe = PatternC
     durationTicks: resume ? 9_000 : 18_000,
     warmupTicks: resume ? 2_000 : 3_000,
     sampleEveryTicks: 500,
-    actions: resume ? [...fill, { type: "wait", ticks: 12_000 }, refill] : fill,
+    actions: resume ? [...fill, CRAFTER_ON, { type: "wait", ticks: 12_000 }, refill] : [...fill, CRAFTER_ON],
     measure: { containers: [chest], items: ["minecraft:piston", ...wrong] },
     expectations: [
       { type: "rate-at-least", item: "minecraft:piston", perHour: 1_500 },
@@ -378,6 +430,11 @@ export const scenarios: Record<string, () => Scenario> = {
   "item-filter": itemFilterScenario,
   smelter: smelterScenario,
   "crafter-chest": crafterScenario,
+  "torch-clock-12": () => torchClockScenario(12),
+  "torch-clock-20": () => torchClockScenario(20),
+  "torch-clock-36": () => torchClockScenario(36),
+  "torch-clock-100": () => torchClockScenario(100),
+  "edge-detector": edgeDetectorScenario,
   "pattern-crafter": () => patternCrafterScenario(),
   "pattern-crafter-resume": () => patternCrafterScenario(true),
   "pattern-crafter-chest": () =>

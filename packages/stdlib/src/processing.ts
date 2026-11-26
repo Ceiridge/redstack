@@ -1,4 +1,5 @@
 import { B, M, type Vec3, component, hopperItemsPerHour } from "@redstack/core";
+import { TorchClock, torchClockPeriod } from "./redstone.js";
 import { itemsForSignal } from "./shulker.js";
 
 const wire = () => B.of("minecraft:redstone_wire", {});
@@ -283,6 +284,8 @@ export function patternCrafterFeeds(recipe: Recipe, faces = 4): CrafterFeed[] {
  * dust on top of the crafter's top block. The clock's period follows from
  * the recipe: the slowest ingredient, at 8 game ticks per item and face.
  *
+ * Switch: the lever on the clock's block, at (−4, 0, −6); saved off.
+ *
  * Seed: the build places it. Built by hand: put one ingredient into each
  * pattern slot. Ingredients must stack (no buckets).
  *
@@ -307,9 +310,11 @@ export const PatternCrafter = component(
       } as Recipe,
       /** Faces to feed (1–4); at least one per ingredient */
       faces: 4,
+      /** Saved running; by default saved off – flip the clock's lever to start */
+      on: false,
     },
   },
-  (c, { recipe, faces }) => {
+  (c, { recipe, faces, on }) => {
     const feeds = patternCrafterFeeds(recipe, faces);
     const solid = () => B.of(c.material(M.solid));
     const dust = (p: Vec3) => {
@@ -345,31 +350,16 @@ export const PatternCrafter = component(
 
     // Ring under the torches: on while any feed is not ready
     for (let x = -4; x <= 4; x++) for (let z = -4; z <= 4; z++) if (Math.abs(x) === 4 || Math.abs(z) === 4) dust([x, -1, z]);
-    // The ring locks the gate: ring → lock repeater → side of the gate
-    c.block(B.repeater(1).signalTowards("north")).at([-2, -1, -5]);
-    c.block(solid()).at([-2, -2, -5]);
-    c.block(B.repeater(1).signalTowards("east")).at([-2, -1, -6]);
-    c.block(solid()).at([-2, -2, -6]);
-
-    // Torch clock feeding the gate. Half period: torch (2 gt) + loop repeaters
+    // Torch clock; the ring locks its output repeater (the gate) from the south
     const perItem = 8; // game ticks per item and hopper
     const need = Math.max(...feeds.map((f) => f.perCraft * perItem), (recipe.count ?? 1) * perItem, 12) * 1.1;
-    const loopDelay = Math.max(2, Math.ceil((need - 4) / 4)); // repeater ticks in the loop: period = 4 + 4 × delay game ticks
-    const m = Math.max(1, Math.ceil(loopDelay / 8));
-    const delays = Array.from({ length: 2 * m }, (_, i) => Math.floor(loopDelay / (2 * m)) + (i < loopDelay % (2 * m) ? 1 : 0)) as Array<1 | 2 | 3 | 4>;
-    const period = 4 + 4 * loopDelay;
-    c.block(solid()).at([-4, -1, -6]);
-    c.block(B.of("minecraft:redstone_wall_torch", { facing: "east", lit: true })).at([-3, -1, -6]);
-    for (let i = 0; i < m; i++) {
-      c.block(B.repeater(delays[i]!).signalTowards("north")).at([-3, -1, -7 - i]);
-      c.block(solid()).at([-3, -2, -7 - i]);
-      c.block(B.repeater(delays[m + i]!).signalTowards("south")).at([-4, -1, -7 - i]);
-      c.block(solid()).at([-4, -2, -7 - i]);
-    }
-    dust([-3, -1, -7 - m]);
-    dust([-4, -1, -7 - m]);
+    const clock = c.add(TorchClock({ period: need, on })).at([-4, -1, -6]);
+    const period = torchClockPeriod(need);
+    c.block(B.repeater(1).signalTowards("north")).at([-2, -1, -5]);
+    c.block(solid()).at([-2, -2, -5]);
+    void clock;
 
-    // Gate → up a dust stair → repeaters along x = 0 → dust on the crafter's top block
+    // Clock output → up a dust stair → repeaters along x = 0 → dust on the crafter's top block
     dust([-1, -1, -6]);
     dust([-1, 0, -7]);
     dust([-1, 1, -8]);

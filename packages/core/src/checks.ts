@@ -209,6 +209,14 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
     const f = x.block.props["facing"];
     return typeof f === "string" ? { id: x.block.id, facing: f } : { id: x.block.id };
   };
+  // Signal ports declare intended contact: a block on another instance's signal port cell is wired there on purpose
+  const signalCells = new Map<string, Set<string>>();
+  for (const inst of a.instances.values()) {
+    const cells = new Set<string>();
+    for (const p of inst.ports.values()) if (p.kind === "signal") for (const c of p.absCells) cells.add(key(c));
+    if (cells.size) signalCells.set(inst.id, cells);
+  }
+  const onSignalPort = (b: { instanceId: string }, pos: Vec3) => signalCells.get(b.instanceId)?.has(key(pos)) ?? false;
   const linked = new Set(a.connections.flatMap((c) => [`${c.from.instanceId}|${c.to.instanceId}`, `${c.to.instanceId}|${c.from.instanceId}`]));
   for (const b of a.blocks.values()) {
     if (!REDSTONE_RELEVANT.has(b.block.id)) continue;
@@ -221,6 +229,7 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
       // hopper next to hopper across connected components is the normal case
       if (b.block.id === "minecraft:hopper" && n.block.id === "minecraft:hopper") continue;
       if (linked.has(`${b.instanceId}|${n.instanceId}`) && isContainer(b.block.id) && isContainer(n.block.id)) continue;
+      if (onSignalPort(b, n.pos) || onSignalPort(n, b.pos)) continue;
       // Two blocks that only react to signals cannot disturb each other
       if (!acts(b, n.pos, blockAt) && !acts(n, b.pos, blockAt)) continue;
       out.push({
