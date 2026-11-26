@@ -3,7 +3,18 @@ import { describe, it } from "node:test";
 import { DIR_VECTORS, type Dir, type ResolvedAssembly, VANILLA_26_3, add, assembly, billOfMaterials, bounds, key, runChecks } from "@redstack/core";
 import { analyzeFlow } from "@redstack/flow";
 import { registry } from "@redstack/nucleation";
-import { CACTUS_SURVIVAL, CactusCell, CactusRow, Chest, HopperLine, cactusGrowthPerHour, withSettings } from "./index.js";
+import {
+  CACTUS_SURVIVAL,
+  CactusCell,
+  CactusRow,
+  Chest,
+  HopperLine,
+  KelpBonemealCore,
+  PlayerPickup,
+  SupplyChest,
+  cactusGrowthPerHour,
+  withSettings,
+} from "./index.js";
 
 /** Follows hopper outputs from every hopper; returns hoppers whose path does not reach `target`. */
 function strandedHoppers(r: ResolvedAssembly, target: string): string[] {
@@ -85,3 +96,60 @@ describe("CactusCell (ring design)", () => {
     });
   }
 });
+
+describe("KelpBonemealCore with routed supply", () => {
+  const BONE_MEAL = "minecraft:bone_meal";
+  const farm = (supplies: 1 | 2) =>
+    assembly(`kelp-${supplies}`, (f) => {
+      const core = f.add(KelpBonemealCore).at([0, 0, 0]);
+      const player = f.add(PlayerPickup).at([1, 1, 5]);
+      f.connect(core.port("kelp"), player.port("in"));
+      const a = f.add(SupplyChest, { item: BONE_MEAL }).at([-1, 3, 1]);
+      if (supplies === 2) {
+        const b = f.add(SupplyChest, { item: BONE_MEAL }).at([3, 3, 3]);
+        f.route(a.port("out"), core.port("bonemealWest"));
+        f.route(b.port("out"), core.port("bonemealEast"));
+      } else {
+        f.distribute(a.port("out"), [core.port("bonemealWest"), core.port("bonemealEast")]);
+      }
+    }).resolve();
+
+  it("passes the checks with the real block registry", () => {
+    for (const n of [1, 2] as const) {
+      const errs = runChecks(farm(n), { registry }).filter((d) => d.severity === "error");
+      assert.deepEqual(errs, [], `supplies=${n}`);
+    }
+  });
+
+  it("feeds each dispenser through hoppers that start under its chest and end in it", () => {
+    const r = farm(2);
+    assert.ok(reachesTarget(r, [-1, 2, 1], "0,1,2"), "west dispenser");
+    assert.ok(reachesTarget(r, [3, 2, 3], "2,1,2"), "east dispenser");
+  });
+
+  it("models the supply line: one chest feeds only half the kelp", () => {
+    const kelp = (n: 1 | 2) => analyzeFlow(farm(n)).storedPerHour["minecraft:kelp"]!;
+    assert.ok(Math.abs(kelp(2) - 18_000 * 0.93) < 1e-6);
+    assert.ok(Math.abs(kelp(1) - 9_000 * 0.93) < 1e-6);
+  });
+
+  it("keeps the items' path and the player's cells free of hoppers", () => {
+    const r = farm(2);
+    for (const b of r.blocks.values()) {
+      if (b.block.id !== "minecraft:hopper") continue;
+      assert.ok(!(b.pos[2] >= 4 && b.pos[0] >= 0 && b.pos[0] <= 2 && b.pos[1] >= 1), `hopper at ${key(b.pos)} in the kelp's way`);
+    }
+  });
+});
+
+/** Does the hopper chain starting at `pos` end in `target`? */
+function reachesTarget(r: ResolvedAssembly, pos: readonly [number, number, number], target: string): boolean {
+  let cur = r.blocks.get(key(pos));
+  for (let i = 0; cur && i < 64; i++) {
+    const next = key(add(cur.pos, DIR_VECTORS[cur.block.props["facing"] as Dir]));
+    if (next === target) return true;
+    cur = r.blocks.get(next);
+    if (cur?.block.id !== "minecraft:hopper") return false;
+  }
+  return false;
+}

@@ -3,9 +3,10 @@
  *
  * Per run:
  *  1. Load the test area (forceload), clear it, remove items, lay a catch floor
- *  2. Put a Carpet fake player on a glass platform above the assembly –
- *     without a player nearby there are no random ticks and no spawns
- *  3. Place blocks bottom-up, run the preparation actions
+ *  2. Place blocks bottom-up (the game is frozen, nothing moves yet)
+ *  3. Put a Carpet fake player at the AFK spot, on a glass platform unless the
+ *     design has a floor there – without a player nearby there are no random
+ *     ticks and no spawns; then run the preparation actions
  *  4. Keep the game frozen and advance it with `tick sprint`; measure the
  *     storage after each step, using the actual game time
  *  5. Collect events with locations (items on the ground, backed-up hoppers)
@@ -14,7 +15,7 @@
  * Server setup: see this package's README.
  */
 
-import { type ResolvedAssembly, type Vec3, add, bounds, formatBlock } from "@redstack/core";
+import { type ResolvedAssembly, type Vec3, add, bounds, formatBlock, key, sub } from "@redstack/core";
 import { analyzeFlow } from "@redstack/flow";
 import {
   type Capability,
@@ -58,6 +59,11 @@ const BASE_GAMERULES: Readonly<Record<string, string | number | boolean>> = {
 const ITEM_ALL = "*";
 /** Horizontal margin around the assembly that is cleared and covered by the catch floor */
 const CATCH_MARGIN = 6;
+/** Standard test area relative to the origin, cleared before every run whatever the design's size */
+const CLEAR_MIN: Vec3 = [-16, -8, -16];
+const CLEAR_MAX: Vec3 = [63, 63, 63];
+/** Longest delay of a scheduled tick worth waiting out after clearing (lava flows every 30 ticks) */
+const STALE_TICKS = 40;
 
 export class FabricCarpetBackend implements TestBackend {
   readonly id = "fabric-carpet";
@@ -145,38 +151,77 @@ export class FabricCarpetBackend implements TestBackend {
     const lo = w(add(box.min, [-CATCH_MARGIN, -2, -CATCH_MARGIN]));
     const hi = w(add(box.max, [CATCH_MARGIN, 4, CATCH_MARGIN]));
 
-    // 1. Load and clear the area
-    await server.ok(`forceload add ${lo[0]} ${lo[2]} ${hi[0]} ${hi[2]}`, /added|already|marked/i);
-    await server.ok(`fill ${lo.join(" ")} ${hi.join(" ")} minecraft:air`, /./);
-    await server.ok("kill @e[type=item]", /./);
+    // 1. Load and clear the area – at least the standard test area, so that
+    // leftovers of an earlier, larger design (a running TNT duper, flowing
+    // lava) cannot leak into this run
+    const clo = w([0, 1, 2].map((i) => Math.min(lo[i]! - this.#opts.origin[i]!, CLEAR_MIN[i]!)) as unknown as Vec3);
+    const chi = w([0, 1, 2].map((i) => Math.max(hi[i]! - this.#opts.origin[i]!, CLEAR_MAX[i]!)) as unknown as Vec3);
+    await server.ok(`forceload add ${clo[0]} ${clo[2]} ${chi[0]} ${chi[2]}`, /added|already|marked/i);
+    await server.ok(`fill ${clo.join(" ")} ${chi.join(" ")} minecraft:air strict`, /./);
+    const killAll = `kill @e[type=!player,x=${clo[0]},y=${clo[1]},z=${clo[2]},dx=${chi[0] - clo[0]},dy=${chi[1] - clo[1]},dz=${chi[2] - clo[2]}]`;
+    await server.ok(killAll, /./);
+    // Let ticks still scheduled by the previous run (observers, pistons, fluids)
+    // run out on the empty area; otherwise they fire on the new design's blocks
+    await server.sprint(STALE_TICKS);
+    await server.ok(killAll, /./);
     // Catch floor: in a void world, lost items would fall out of the world unseen.
     // With a floor they stay in the test area and are reported as ground items.
     await server.ok(`fill ${lo[0]} ${lo[1]} ${lo[2]} ${hi[0]} ${lo[1]} ${hi[2]} minecraft:barrier`, /./);
 
-    // 2. Fake player on a platform
-    const afk = w(s.world.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
-    await server.ok(`setblock ${afk[0]} ${afk[1] - 1} ${afk[2]} minecraft:glass`, /./);
-    await this.#ensureBot(server, afk);
+    if (s.world.terrain === "flat") {
+      const gy = this.#opts.origin[1] + (s.world.groundY ?? box.min[1] - 1);
+      await server.ok(`fill ${lo[0]} ${gy} ${lo[2]} ${hi[0]} ${gy} ${hi[2]} minecraft:stone`, /./);
+    } else if (s.world.terrain === "terrain") {
+      throw new Error(`${this.id}: natural terrain is not supported yet.`);
+    }
 
-    // 3. Blocks bottom-up
+    // 2. Blocks bottom-up
     const blocks = [...a.blocks.values()].sort((x, y) => x.pos[1] - y.pos[1]);
     for (const b of blocks) {
       const p = w(b.pos);
-      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}`, /Changed the block/);
+      await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${s.placement === "strict" ? " strict" : ""}`, /Changed the block/);
     }
+    // 3. Fake player on a platform, after the blocks: the design may provide its floor
+    const afk = w(s.world.afkSpot ?? [Math.round((box.min[0] + box.max[0]) / 2), box.max[1] + 3, Math.round((box.min[2] + box.max[2]) / 2)]);
+    // The platform is only needed when the design does not provide the floor itself
+    const floor = sub(afk, this.#opts.origin);
+    if (!a.blocks.has(key([floor[0], floor[1] - 1, floor[2]]))) {
+      await server.ok(`setblock ${afk[0]} ${afk[1] - 1} ${afk[2]} minecraft:glass`, /./);
+    }
+    await this.#ensureBot(server, afk);
+
     // One tick so block updates and block entities settle
     await server.sprint(1);
 
+    const bot = this.#opts.botName;
+    if (s.measure.player) await server.command(`clear ${bot}`);
     for (const act of s.actions) {
       if (act.type === "insert") await this.#insert(server, w(act.at), act.item, act.count);
       else if (act.type === "wait") await server.sprint(act.ticks);
+      else if (act.type === "set") await server.ok(`setblock ${w(act.at).join(" ")} ${act.block}`, /Changed the block/);
+      else if (act.type === "use") await this.#use(server, a, act.at, act.from ?? standingCell(a, act.at), afk);
     }
 
     // 4. Measure
-    const sinks = sinkPositions(a).map(w);
-    const items = [...new Set([...Object.keys(analyzeFlow(a).storedPerHour), ...s.actions.flatMap((x) => (x.type === "insert" ? [x.item] : []))])];
+    const sinks = (s.measure.containers ?? sinkPositions(a)).map(w);
+    const items = s.measure.items ?? [
+      ...new Set([...Object.keys(analyzeFlow(a).storedPerHour), ...s.actions.flatMap((x) => (x.type === "insert" ? [x.item] : []))]),
+    ];
+    const picked: Record<string, number> = {};
     const samples: Sample[] = [];
-    const measure = async (tick: number) => samples.push({ tick, stored: await this.#countStored(server, sinks, items) });
+    const measure = async (tick: number) => {
+      const stored = await this.#countStored(server, sinks, items);
+      if (s.measure.player) {
+        // Emptying the inventory at every sample keeps it from filling up
+        for (const item of [...items, ITEM_ALL]) {
+          const n = await server.removed(item === ITEM_ALL ? `clear ${bot}` : `clear ${bot} ${item}`);
+          picked[item] = (picked[item] ?? 0) + n;
+          if (item !== ITEM_ALL) picked[ITEM_ALL] = (picked[ITEM_ALL] ?? 0) + n;
+        }
+        for (const [item, n] of Object.entries(picked)) stored[item] = (stored[item] ?? 0) + n;
+      }
+      samples.push({ tick, stored });
+    };
     const t0Game = await server.gameTime();
     let tick = 0;
     let sprintMs = 0;
@@ -246,6 +291,20 @@ export class FabricCarpetBackend implements TestBackend {
     throw new Error(`Could not create fake player "${name}" (is Carpet installed?).`);
   }
 
+  /** Right-click by the fake player, like a real player would flip a lever. */
+  async #use(server: Server, a: ResolvedAssembly, at: Vec3, from: Vec3, afk: Vec3): Promise<void> {
+    const bot = this.#opts.botName;
+    const [fx, fy, fz] = this.#opts.origin.map((o, i) => o + from[i]!) as [number, number, number];
+    const [tx, ty, tz] = this.#opts.origin.map((o, i) => o + at[i]! + 0.5) as [number, number, number];
+    await server.ok(`tp ${bot} ${fx + 0.5} ${fy} ${fz + 0.5}`, /Teleported/);
+    await server.command(`player ${bot} look at ${tx} ${ty} ${tz}`);
+    await server.command(`player ${bot} use once`);
+    await server.sprint(1);
+    await server.ok(`tp ${bot} ${afk[0] + 0.5} ${afk[1]} ${afk[2] + 0.5}`, /Teleported/);
+    const block = a.blocks.get(key(at));
+    if (block) this.#opts.log?.(`used ${block.block.id} at (${at.join(",")}) from (${from.join(",")})`);
+  }
+
   async #insert(server: Server, pos: Vec3, item: string, count: number): Promise<void> {
     let left = count;
     for (let slot = 0; left > 0; slot++) {
@@ -265,6 +324,33 @@ export class FabricCarpetBackend implements TestBackend {
     }
     return out;
   }
+}
+
+const FACING: Readonly<Record<string, Vec3>> = {
+  north: [0, 0, -1],
+  south: [0, 0, 1],
+  west: [-1, 0, 0],
+  east: [1, 0, 0],
+  up: [0, 1, 0],
+  down: [0, -1, 0],
+};
+
+/**
+ * A cell to stand in for using a block: free for the player's feet and head,
+ * preferring the side the block faces (a lever on a wall faces away from it).
+ */
+export function standingCell(a: ResolvedAssembly, at: Vec3): Vec3 {
+  const block = a.blocks.get(key(at));
+  const facing = String(block?.block.props["facing"] ?? "");
+  const dirs = [...(facing && FACING[facing] ? [FACING[facing]] : []), ...Object.values(FACING)];
+  const free = (p: Vec3) => !a.blocks.has(key(p));
+  for (const d of dirs) {
+    const feet = add(at, d);
+    if (free(feet) && free(add(feet, [0, 1, 0]))) return feet;
+    const lower = add(feet, [0, -1, 0]);
+    if (free(lower) && free(feet)) return lower;
+  }
+  throw new Error(`No free cell next to (${at.join(",")}) to use it from; give "from" explicitly.`);
 }
 
 /** Positions of all storage (ports with a stores declaration). */
@@ -303,6 +389,15 @@ class Server {
     const m = /Count:\s*(\d+)/i.exec(r);
     if (m) return Number(m[1]);
     if (/Test failed/i.test(r)) return 0;
+    throw new Error(`Unexpected reply to /${cmd}: ${r}`);
+  }
+
+  /** Items removed by /clear ("Removed N item(s) from player X"); no matching items = 0. */
+  async removed(cmd: string): Promise<number> {
+    const r = await this.rcon.command(cmd);
+    const m = /Removed (\d+) item/i.exec(r);
+    if (m) return Number(m[1]);
+    if (/No items were found/i.test(r)) return 0;
     throw new Error(`Unexpected reply to /${cmd}: ${r}`);
   }
 

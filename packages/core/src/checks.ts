@@ -5,8 +5,9 @@
 import type { ResolvedAssembly } from "./assembly.js";
 import { REDSTONE_RELEVANT } from "./blocks.js";
 import type { Diagnostic } from "./diagnostics.js";
-import { DIR_VECTORS, add, key } from "./geometry.js";
+import { DIR_VECTORS, type Dir, type Vec3, add, key, sub } from "./geometry.js";
 import { type BlockRegistry, accepts } from "./registry.js";
+import { isContainer } from "./routing.js";
 
 export interface CheckOptions {
   /** Enables block-state and material checks */
@@ -87,17 +88,41 @@ export function checkConnections(a: ResolvedAssembly): Diagnostic[] {
     if (from.item && to.item && from.item !== to.item) {
       out.push({ severity: "error", code: "item-filter", message: `Connection ${label}: delivers ${from.item}, expects ${to.item}.` });
     }
+    // An output with several target cells may feed several inputs (a splitter):
+    // every connection needs one of the target cells, and every target cell
+    // needs a receiver among the output's connections.
     const accept = new Set(to.absCells.map(key));
-    for (const t of from.absCells) {
-      if (!accept.has(key(t))) {
-        out.push({
-          severity: "error",
-          code: "port-misaligned",
-          message: `Connection ${label}: target cell (${t.join(",")}) is not on the input.`,
-          at: t,
-          instances: [c.from.instanceId, c.to.instanceId],
-        });
-      }
+    if (!from.absCells.some((t) => accept.has(key(t)))) {
+      const t = from.absCells[0]!;
+      out.push({
+        severity: "error",
+        code: "port-misaligned",
+        message: `Connection ${label}: target cell (${t.join(",")}) is not on the input.`,
+        at: t,
+        instances: [c.from.instanceId, c.to.instanceId],
+      });
+    }
+  }
+  const receivers = new Map<string, Set<string>>();
+  for (const c of a.connections) {
+    const to = a.instances.get(c.to.instanceId)?.ports.get(c.to.port);
+    const k = `${c.from.instanceId}.${c.from.port}`;
+    const set = receivers.get(k) ?? new Set<string>();
+    for (const cell of to?.absCells ?? []) set.add(key(cell));
+    receivers.set(k, set);
+  }
+  for (const [k, accept] of receivers) {
+    const [id, port] = [k.slice(0, k.lastIndexOf(".")), k.slice(k.lastIndexOf(".") + 1)];
+    const from = a.instances.get(id)?.ports.get(port);
+    for (const t of from?.absCells ?? []) {
+      if (accept.has(key(t))) continue;
+      out.push({
+        severity: "error",
+        code: "port-misaligned",
+        message: `Output ${k}: target cell (${t.join(",")}) is on none of its receivers' inputs.`,
+        at: t,
+        instances: [id],
+      });
     }
   }
   return out;
@@ -125,6 +150,40 @@ export function checkUnconnected(a: ResolvedAssembly): Diagnostic[] {
   return out;
 }
 
+/** Blocks that give off a signal (or move blocks) in every direction. */
+const EMITS_ALL = new Set(
+  [
+    "redstone_wire",
+    "redstone_torch",
+    "redstone_wall_torch",
+    "redstone_block",
+    "lever",
+    "stone_button",
+    "target",
+    "daylight_detector",
+    "tripwire_hook",
+    "sculk_sensor",
+    "calibrated_sculk_sensor",
+    "detector_rail",
+  ].map((id) => `minecraft:${id}`),
+);
+
+/** Can block `b` act on the cell `other` next to it (power it, watch it, push it)? */
+function acts(b: { pos: Vec3; block: { id: string; props: Readonly<Record<string, unknown>> } }, other: Vec3): boolean {
+  const id = b.block.id;
+  if (EMITS_ALL.has(id) || id.endsWith("_button") || id.endsWith("_pressure_plate")) return true;
+  const facing = b.block.props["facing"];
+  if (typeof facing !== "string" || !(facing in DIR_VECTORS)) return false;
+  const front = key(add(b.pos, DIR_VECTORS[facing as Dir]));
+  const back = key(sub(b.pos, DIR_VECTORS[facing as Dir]));
+  const o = key(other);
+  // Observers watch the front and pulse out of the back; repeaters and comparators take input
+  // at the front and output at the back; pistons push to the front.
+  if (id === "minecraft:observer" || id === "minecraft:repeater" || id === "minecraft:comparator") return o === front || o === back;
+  if (id === "minecraft:piston" || id === "minecraft:sticky_piston") return o === front;
+  return false;
+}
+
 /**
  * Crosstalk heuristic: redstone-relevant blocks of different instances that
  * touch each other. Warnings, not errors, since not every contact is a
@@ -134,6 +193,8 @@ export function checkUnconnected(a: ResolvedAssembly): Diagnostic[] {
 export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
   const out: Diagnostic[] = [];
   const seen = new Set<string>();
+  // Instances connected through ports touch on purpose (a hopper route ending in its dispenser)
+  const linked = new Set(a.connections.flatMap((c) => [`${c.from.instanceId}|${c.to.instanceId}`, `${c.to.instanceId}|${c.from.instanceId}`]));
   for (const b of a.blocks.values()) {
     if (!REDSTONE_RELEVANT.has(b.block.id)) continue;
     for (const v of Object.values(DIR_VECTORS)) {
@@ -144,6 +205,9 @@ export function checkCrosstalk(a: ResolvedAssembly): Diagnostic[] {
       seen.add(pair);
       // hopper next to hopper across connected components is the normal case
       if (b.block.id === "minecraft:hopper" && n.block.id === "minecraft:hopper") continue;
+      if (linked.has(`${b.instanceId}|${n.instanceId}`) && isContainer(b.block.id) && isContainer(n.block.id)) continue;
+      // Two blocks that only react to signals cannot disturb each other
+      if (!acts(b, n.pos) && !acts(n, b.pos)) continue;
       out.push({
         severity: "warning",
         code: "possible-crosstalk",

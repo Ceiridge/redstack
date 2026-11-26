@@ -28,6 +28,7 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 - **Materials over block ids.** Ask for a slot (`c.material(M.cactusBreaker)`, or a new `material(role, tag, default)`) wherever another block of the same kind would do. Hard-code an id only where the exact block matters (hopper, observer, …).
 - **Environment-aware rates.** Compute rates from `c.env` (`hopperItemsPerHour`, `ticksForRandomTicks`, `growthFactor`), never from constants that silently assume vanilla.
 - **Semantic block helpers.** Use `outputTo`, `signalTowards`, `watching`, `pushing` instead of raw `facing` values – that is where the classic mistakes are.
+- **Let the router lay transport.** Connect ports with `c.route`, `c.collect` or `c.distribute` instead of placing hoppers by hand, unless the exact hopper layout is the point of the component (a collection bed under crops). Declare item paths and player cells with `keepClear` so the router avoids them.
 - **Reserve space explicitly.** Cells that must stay free (growth space, fall paths, cactus neighbours) go into `c.keepClear(...)`; the checks then catch anything built into them.
 - **Declare rates.** Every component declares `produces`/`passes`/`stores`/`consumes` with a basis, so the flow model and the economy can use it.
 - **Respect the layers.** `core` has no dependencies; third-party libraries only in adapter packages; server- or market-specific code only in its own module (see `docs/ARCHITECTURE.md`).
@@ -38,7 +39,7 @@ Nothing counts as working until code has verified it. "Test-driven" here does no
 2. Write the component or assembly (`examples/src/` for farms).
 3. `pnpm build && node apps/cli/dist/main.js all <module> -o out/<name>.litematic` – fix all errors (they include invalid block states and materials, checked against Minecraft's block table), read the warnings.
 4. Look at it: `redstack render <module> -o out/<name>.html` – 3D view and debug view with flows and findings.
-   To learn from an existing design: `redstack inspect <file.litematic> -o out/x.html`, and `schematicComponent()` to benchmark it in-game. Credit its designer; do not commit third-party schematics.
+   To learn from an existing design: `redstack inspect <file.litematic> -o out/x.html`, and `schematicComponent()` to benchmark it in-game (`examples/src/benchmarks.ts`; place snapshots of working farms with `placement: "strict"` and switch them on with a `use` action). Credit its designer; do not commit third-party schematics.
 5. Add an in-game scenario (`examples/src/scenarios.ts`) with `matches-flow-model`, `no-ground-items`, `no-stuck-hoppers` as appropriate, and run it (`pnpm test:game <name>`, server setup in `packages/backend-fabric/README.md`).
 6. If model and measurement disagree: experiment, explain, then fix the design **or** calibrate the rate model with the measured value – never just widen the tolerance.
 7. Unit tests for any new logic; `pnpm test` must pass.

@@ -11,9 +11,9 @@
  * needed where geometry is genuinely irregular.
  */
 
-import { type BlockSpec, block as makeBlock } from "./blocks.js";
+import { type BlockSpec, block as makeBlock, rotateBlock } from "./blocks.js";
 import type { Diagnostic } from "./diagnostics.js";
-import { type Environment, VANILLA_26_3 } from "./environment.js";
+import { type Environment, VANILLA_26_3, hopperItemsPerHour } from "./environment.js";
 import {
   type Dir,
   type RelDir,
@@ -29,6 +29,7 @@ import {
   sub,
 } from "./geometry.js";
 import type { MaterialChoices, MaterialSlot } from "./materials.js";
+import { type RouteResult, type RoutingWorld, hopperSplit, hopperTarget, hopperTree, poweredCells, routeHoppers } from "./routing.js";
 
 // ---------- Ports and rates ----------
 
@@ -71,7 +72,17 @@ export type RateDecl =
   | (RateMeta & { readonly type: "produces"; readonly port: string; readonly item: string; readonly perHour: number })
   | (RateMeta & { readonly type: "passes"; readonly from: string; readonly to: string; readonly maxPerHour: number })
   | (RateMeta & { readonly type: "stores"; readonly port: string; readonly capacityItems: number })
-  | (RateMeta & { readonly type: "consumes"; readonly item: string; readonly perHour: number });
+  | (RateMeta & { readonly type: "consumes"; readonly item: string; readonly perHour: number })
+  /** Turns `input` arriving at `from` into `output` at `to` (e.g. bone meal → kelp), at most maxPerHour inputs */
+  | (RateMeta & {
+      readonly type: "converts";
+      readonly from: string;
+      readonly to: string;
+      readonly input: string;
+      readonly output: string;
+      readonly outputPerInput: number;
+      readonly maxPerHour: number;
+    });
 
 /** Maturity of a component. Only "game-tested" and above count as working. */
 export type ComponentStatus =
@@ -402,6 +413,23 @@ export interface OutputOptions extends PortOptions {
   readonly rate?: { readonly perHour: number; readonly basis: RateBasis; readonly note?: string };
 }
 
+/** Where a route starts or ends: a port, or a cell in this component's frame. */
+export type RouteEnd = PortRef | Vec3;
+
+export interface RouteOptions {
+  /** Id of the generated child (default HopperRoute#n / HopperCollector#n) */
+  readonly id?: string;
+  /** How far around the design the router may search (default 4) */
+  readonly margin?: number;
+}
+
+interface RouteRequest {
+  readonly kind: "route" | "collect" | "distribute";
+  readonly from: readonly RouteEnd[];
+  readonly to: readonly RouteEnd[];
+  readonly opts: RouteOptions;
+}
+
 export class ComponentBuilder {
   readonly name: string;
   readonly ctx: BuildContext;
@@ -417,6 +445,7 @@ export class ComponentBuilder {
   readonly #notes: string[] = [];
   readonly #materials: MaterialUse[] = [];
   readonly #counters = new Map<string, number>();
+  readonly #routes: RouteRequest[] = [];
 
   constructor(name: string, ctx: BuildContext = DEFAULT_CONTEXT) {
     this.name = name;
@@ -546,6 +575,36 @@ export class ComponentBuilder {
     this.#exposed.set(name, ref);
   }
 
+  // ----- solved layout -----
+
+  /**
+   * Connects an output to an input with hoppers that the router places and
+   * orients: the shortest chain through free space that does not drain or
+   * feed anything else. Solved when the component is finished, after all
+   * children are placed. `from`: an output port (the chain starts in the cell
+   * it outputs into) or a start cell; `to`: an input port or a container cell.
+   */
+  route(from: RouteEnd, to: RouteEnd, opts: RouteOptions = {}): void {
+    this.#routes.push({ kind: "route", from: [from], to: [to], opts });
+  }
+
+  /** Merges several outputs into one input with a hopper tree (see `route`). */
+  collect(from: readonly RouteEnd[], to: RouteEnd, opts: RouteOptions = {}): void {
+    if (from.length === 0) throw new Error(`${this.name}: collect needs at least one source.`);
+    this.#routes.push({ kind: "collect", from, to: [to], opts });
+  }
+
+  /**
+   * Feeds several inputs from one output with a branching hopper network:
+   * a branch hopper sits below a network hopper and pulls from it, so items
+   * split between the branches (see `route`). For supply lines, e.g. bone
+   * meal to dispensers.
+   */
+  distribute(from: RouteEnd, to: readonly RouteEnd[], opts: RouteOptions = {}): void {
+    if (to.length === 0) throw new Error(`${this.name}: distribute needs at least one target.`);
+    this.#routes.push({ kind: "distribute", from: [from], to, opts });
+  }
+
   // ----- own ports and rates -----
 
   input(name: string, cells: CellsArg, opts: PortOptions = {}): void {
@@ -573,6 +632,22 @@ export class ComponentBuilder {
     this.#rates.push({ type: "stores", port, capacityItems, basis, ...(note ? { note } : {}) });
   }
 
+  /**
+   * Input items at `from` become output items at `to`: e.g. bone meal fed to a
+   * dispenser becomes kelp. Limited to `maxPerHour` inputs; the flow model
+   * then follows the supply, so an underfed machine shows up as a bottleneck.
+   */
+  converts(
+    from: string,
+    to: string,
+    conversion: { readonly input: string; readonly output: string; readonly outputPerInput?: number; readonly maxPerHour: number },
+    basis: RateBasis,
+    note?: string,
+  ): void {
+    const { input, output, maxPerHour } = conversion;
+    this.#rates.push({ type: "converts", from, to, input, output, outputPerInput: conversion.outputPerInput ?? 1, maxPerHour, basis, ...(note ? { note } : {}) });
+  }
+
   consumes(item: string, perHour: number, basis: RateBasis, note?: string): void {
     this.#rates.push({ type: "consumes", item, perHour, basis, ...(note ? { note } : {}) });
   }
@@ -598,7 +673,7 @@ export class ComponentBuilder {
       throw new Error(`${this.name}: ${stillUnplaced.length} block(s) without position (${stillUnplaced.map((p) => p.block.id).join(", ")}).`);
     }
     for (const r of this.#rates) {
-      const used = r.type === "passes" ? [r.from, r.to] : r.type === "consumes" ? [] : [r.port];
+      const used = r.type === "passes" || r.type === "converts" ? [r.from, r.to] : r.type === "consumes" ? [] : [r.port];
       for (const n of used) if (!this.#ports.has(n)) throw new Error(`${this.name}: rate refers to unknown port "${n}".`);
     }
 
@@ -609,6 +684,9 @@ export class ComponentBuilder {
       const p = placed.get(inst.id);
       if (p) children.push({ id: inst.id, template: inst.template, origin: p.origin, rotation: p.rotation });
     }
+
+    const routed = this.#solveRoutes(children, diagnostics);
+    children.push(...routed.children);
 
     // Port view: own ports plus exposed child ports, in this frame
     const portView = new Map<string, PortDef>(this.#ports);
@@ -624,6 +702,7 @@ export class ComponentBuilder {
 
     const endpoint = (r: PortRef): PortEndpoint => (r.instance ? { child: r.instance.id, port: r.port } : { port: r.port });
     const connections = [...this.#connections];
+    const routeConnections = routed.connections;
     for (const inst of this.#children) {
       const pl = inst._placement;
       if (pl.kind !== "attach") continue;
@@ -642,12 +721,142 @@ export class ComponentBuilder {
       exposed,
       portView,
       children,
-      connections: connections.map((c) => ({ from: endpoint(c.from), to: endpoint(c.to) })),
+      connections: [...connections.map((c) => ({ from: endpoint(c.from), to: endpoint(c.to) })), ...routeConnections],
       rates: [...this.#rates],
       materials: [...this.#materials],
       notes: [...this.#notes],
       diagnostics,
     };
+  }
+
+  /** Runs the router for every route/collect request, in order. */
+  #solveRoutes(
+    children: readonly ChildTemplate[],
+    diagnostics: Diagnostic[],
+  ): { children: ChildTemplate[]; connections: Array<{ from: PortEndpoint; to: PortEndpoint }> } {
+    const out = { children: [] as ChildTemplate[], connections: [] as Array<{ from: PortEndpoint; to: PortEndpoint }> };
+    if (this.#routes.length === 0) return out;
+
+    // Everything in this frame: own blocks, children's blocks (recursively), clear cells
+    const blocks = new Map<string, { pos: Vec3; block: BlockSpec }>();
+    const clear = new Set<string>();
+    const addTemplate = (t: ComponentTemplate, origin: Vec3, rot: Rotation) => {
+      const toFrame = (v: Vec3) => add(origin, rotateVec(v, rot));
+      for (const b of t.blocks) {
+        const pos = toFrame(b.pos);
+        blocks.set(key(pos), { pos, block: rotateBlock(b.block, rot) });
+      }
+      for (const c of t.clear) clear.add(key(toFrame(c)));
+      for (const c of t.children) addTemplate(c.template, toFrame(c.origin), normalizeRotation(rot + c.rotation));
+    };
+    for (const p of this.#placed) blocks.set(key(p.pos), { pos: p.pos, block: p.block });
+    for (const c of this.#clear.values()) clear.add(key(c));
+    for (const c of children) addTemplate(c.template, c.origin, c.rotation);
+
+    const portCells = (ref: PortRef, direction: PortDirection): readonly Vec3[] | undefined => {
+      if (!ref.instance) {
+        const def = this.#ports.get(ref.port);
+        if (def && def.direction !== direction) throw new Error(`${this.name}: route ${direction === "in" ? "target" : "source"} "${ref.port}" is an ${def.direction}put.`);
+        return def?.cells;
+      }
+      const child = children.find((c) => c.id === ref.instance!.id);
+      const def = ref.instance.template.portView.get(ref.port);
+      if (!child || !def) return undefined;
+      if (def.direction !== direction) throw new Error(`${this.name}: route ${direction === "in" ? "target" : "source"} ${ref.instance.id}.${ref.port} is an ${def.direction}put.`);
+      return def.cells.map((v) => add(child.origin, rotateVec(v, child.rotation)));
+    };
+    const cellsOf = (end: RouteEnd, direction: PortDirection) => (Array.isArray(end) ? [end as Vec3] : portCells(end as PortRef, direction));
+    const endpointOf = (end: RouteEnd): PortEndpoint | undefined =>
+      Array.isArray(end) ? undefined : (end as PortRef).instance ? { child: (end as PortRef).instance!.id, port: (end as PortRef).port } : { port: (end as PortRef).port };
+
+    for (const req of this.#routes) {
+      const starts = req.from.map((f) => cellsOf(f, "out")?.[0]);
+      const targetSets = req.to.map((t) => cellsOf(t, "in"));
+      const label = { route: "HopperRoute", collect: "HopperCollector", distribute: "HopperSplitter" }[req.kind];
+      if (starts.some((x) => !x) || targetSets.some((t) => !t?.length)) {
+        diagnostics.push({ severity: "error", code: "route-failed", message: `${label}: an end is not placed (unplaced child?).` });
+        continue;
+      }
+      const targets = targetSets.flatMap((t) => t!);
+      const all = [...blocks.values()].map((b) => b.pos).concat(starts as Vec3[], targets);
+      const m = req.opts.margin ?? 4;
+      const min: Vec3 = [0, 1, 2].map((i) => Math.min(...all.map((p) => p[i]!)) - m) as unknown as Vec3;
+      const max: Vec3 = [0, 1, 2].map((i) => Math.max(...all.map((p) => p[i]!)) + m) as unknown as Vec3;
+      const powered = poweredCells(blocks.values());
+      const world: RoutingWorld = {
+        occupied: (p) => blocks.has(key(p)) || clear.has(key(p)),
+        powered: (p) => powered.has(key(p)),
+        blockAt: (p) => blocks.get(key(p))?.block.id,
+        pushTarget: (p) => {
+          const b = blocks.get(key(p))?.block;
+          if (!b || !["minecraft:hopper", "minecraft:dropper", "minecraft:dispenser"].includes(b.id)) return undefined;
+          const f = b.props["facing"];
+          return typeof f === "string" && f in DIR_VECTORS ? add(p, DIR_VECTORS[f as Dir]) : undefined;
+        },
+        min,
+        max,
+      };
+      const feeds = (starts as Vec3[]).map((p) => add(p, [0, 1, 0]));
+      let best: RouteResult | undefined;
+      if (req.kind === "distribute") {
+        // One cell per target (the first); every target must be served
+        best = hopperSplit(world, starts[0]!, targetSets.map((t) => t![0]!), feeds);
+      } else {
+        // Several target cells (e.g. a hopper line): try each, keep the shortest
+        for (const t of targets) {
+          const r = req.kind === "route" ? routeHoppers(world, starts[0]!, t, feeds) : hopperTree(world, starts as Vec3[], t, feeds);
+          if (r.ok && (!best?.ok || r.hoppers.length < best.hoppers.length)) best = r;
+          else if (!best) best = r;
+        }
+      }
+      if (!best?.ok) {
+        diagnostics.push({ severity: "error", code: "route-failed", message: `${label}: ${best?.message ?? "no route"}`, at: starts[0]! });
+        continue;
+      }
+
+      const n = (this.#counters.get(label) ?? 0) + 1;
+      this.#counters.set(label, n);
+      const id = req.opts.id ?? `${label}#${n}`;
+      const hoppers = best.hoppers;
+      for (const h of hoppers) blocks.set(key(h.pos), { pos: h.pos, block: makeBlock("hopper", { facing: h.facing, enabled: true }) });
+      const exits = hoppers.map(hopperTarget).filter((t) => !hoppers.some((h) => key(h.pos) === key(t)));
+      const inPort: PortDef = { name: "in", direction: "in", kind: "items", cells: starts as Vec3[], description: "routed hoppers" };
+      const outPort: PortDef = { name: "out", direction: "out", kind: "items", cells: exits };
+      const ports = new Map([
+        ["in", inPort],
+        ["out", outPort],
+      ]);
+      out.children.push({
+        id,
+        origin: [0, 0, 0],
+        rotation: 0,
+        template: {
+          typeName: label,
+          status: "game-tested",
+          params: { hoppers: hoppers.length },
+          blocks: hoppers.map((h) => ({ pos: h.pos, block: makeBlock("hopper", { facing: h.facing, enabled: true }) })),
+          clear: [],
+          ports,
+          exposed: new Map(),
+          portView: ports,
+          children: [],
+          connections: [],
+          rates: [{ type: "passes", from: "in", to: "out", maxPerHour: hopperItemsPerHour(this.ctx.env), basis: "game-mechanic", note: "solved hopper route; as fast as one hopper" }],
+          materials: [],
+          notes: [`${hoppers.length} hopper(s) placed by the router`],
+          diagnostics: [],
+        },
+      });
+      for (const f of req.from) {
+        const ep = endpointOf(f);
+        if (ep) out.connections.push({ from: ep, to: { child: id, port: "in" } });
+      }
+      for (const t of req.to) {
+        const toEp = endpointOf(t);
+        if (toEp) out.connections.push({ from: { child: id, port: "out" }, to: toEp });
+      }
+    }
+    return out;
   }
 
   #placeChildren(diagnostics: Diagnostic[]): Map<string, { origin: Vec3; rotation: Rotation }> {

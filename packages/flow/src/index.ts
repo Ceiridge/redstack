@@ -105,6 +105,14 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
         }
         addRates(acc, inflow, t > r.maxPerHour ? r.maxPerHour / t : 1);
       }
+      if (r.type === "converts" && r.to === port) {
+        bases.add(r.basis);
+        const t = inFlow(id, r.from)[r.input] ?? 0;
+        if (t > r.maxPerHour) {
+          bottlenecks.push({ instanceId: id, from: r.from, to: r.to, inflowPerHour: t, capacityPerHour: r.maxPerHour, utilization: t / r.maxPerHour });
+        }
+        acc[r.output] = (acc[r.output] ?? 0) + Math.min(t, r.maxPerHour) * r.outputPerInput;
+      }
     }
     visiting.delete(k);
     // Several receivers: split evenly (approximation)
@@ -162,7 +170,9 @@ export function analyzeFlow(a: ResolvedAssembly): FlowAnalysis {
       const k = portKey(inst.id, p.name);
       if (p.direction === "in") {
         const t = total(inFlows.get(k) ?? {});
-        const handled = rs.some((r) => (r.type === "passes" && r.from === p.name) || (r.type === "stores" && r.port === p.name));
+        const handled = rs.some(
+          (r) => ((r.type === "passes" || r.type === "converts") && r.from === p.name) || (r.type === "stores" && r.port === p.name),
+        );
         if (t > 0 && !handled) {
           diagnostics.push({
             severity: "warning",

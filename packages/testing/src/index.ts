@@ -29,6 +29,12 @@ export type Capability =
  */
 export interface TestWorld {
   readonly terrain: "void" | "flat" | "terrain";
+  /**
+   * For "flat": the y (assembly coordinates) of the ground's top layer. The
+   * design's own blocks replace the ground where they overlap, so a farm that
+   * is dug into the ground keeps working. Default: just below the design.
+   */
+  readonly groundY?: number;
   readonly biome?: string;
   /** Position of the AFK player in assembly coordinates. Default: above the centre of the assembly. */
   readonly afkSpot?: Vec3;
@@ -36,13 +42,49 @@ export interface TestWorld {
   readonly gamerules?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/** Preparation actions. Positions in assembly coordinates. More (power, chunk reload) will follow. */
+/** Preparation actions. Positions in assembly coordinates. More (chunk reload) will follow. */
 export type Action =
   | { readonly type: "insert"; readonly at: Vec3; readonly item: string; readonly count: number }
-  | { readonly type: "wait"; readonly ticks: number };
+  | { readonly type: "wait"; readonly ticks: number }
+  /**
+   * Replaces a block, with updates to its direct neighbours only. To flip a
+   * lever or press a button, use "use": a replaced lever does not update the
+   * block it is attached to.
+   */
+  | { readonly type: "set"; readonly at: Vec3; readonly block: string }
+  /**
+   * The AFK player right-clicks a block (lever, button, door, repeater …) like
+   * a real player, from `from` (default: a free neighbour cell, preferring the
+   * side the block faces), then returns to the AFK spot.
+   */
+  | { readonly type: "use"; readonly at: Vec3; readonly from?: Vec3 };
+
+/**
+ * How the design is placed. "with-updates" places block by block with normal
+ * block updates, like a player building it. "strict" places every block
+ * exactly as given without updates – right for schematics saved from a
+ * working world, where updates during placement would set off redstone
+ * (a TNT duper can blow itself up while it is half built).
+ */
+export type Placement = "with-updates" | "strict";
+
+/** What is counted at each sample. Rates are the change of these counts over time. */
+export interface Measurement {
+  /** Containers to count, in assembly coordinates. Default: all storage ports (`stores` declarations). */
+  readonly containers?: readonly Vec3[];
+  /**
+   * Count the items the AFK player picked up (the inventory is emptied at
+   * every sample). For farms that deliver into the player, e.g. kelp or XP farms.
+   */
+  readonly player?: boolean;
+  /** Items to count. Default: the flow model's stored items plus inserted items. */
+  readonly items?: readonly string[];
+}
 
 export type Expectation =
   | { readonly type: "rate-at-least"; readonly item: string; readonly perHour: number }
+  /** E.g. 0 for an item that must not arrive (crosstalk from a neighbouring container) */
+  | { readonly type: "rate-at-most"; readonly item: string; readonly perHour: number }
   | { readonly type: "no-ground-items" }
   | { readonly type: "no-stuck-hoppers" }
   | { readonly type: "matches-flow-model"; readonly tolerance: number };
@@ -60,7 +102,9 @@ export interface Scenario {
   /** Number of independent runs, for statistics on random mechanics */
   readonly repeats: number;
   /** Actions before the start (filling containers etc.) */
+  readonly placement: Placement;
   readonly actions: readonly Action[];
+  readonly measure: Measurement;
   readonly expectations: readonly Expectation[];
 }
 
@@ -72,7 +116,9 @@ export interface ScenarioOptions {
   readonly warmupTicks?: number;
   readonly sampleEveryTicks?: number;
   readonly repeats?: number;
+  readonly placement?: Placement;
   readonly actions?: readonly Action[];
+  readonly measure?: Measurement;
   readonly expectations?: readonly Expectation[];
 }
 
@@ -87,7 +133,9 @@ export function scenario(assembly: ResolvedAssembly, o: ScenarioOptions): Scenar
     warmupTicks: o.warmupTicks ?? 0,
     sampleEveryTicks: o.sampleEveryTicks ?? Math.max(20, Math.floor(o.durationTicks / 20)),
     repeats: o.repeats ?? 1,
+    placement: o.placement ?? "with-updates",
     actions: o.actions ?? [],
+    measure: o.measure ?? {},
     expectations: o.expectations ?? [],
   };
 }
@@ -161,7 +209,10 @@ export function summarize(runs: readonly RunResult[]): Record<string, { mean: nu
   return out;
 }
 
-/** Rate per hour from samples, starting after the warm-up. */
+/**
+ * Rate per hour from samples, starting after the warm-up. Negative rates mean
+ * consumption (e.g. bone meal draining from the supply containers).
+ */
 export function ratesFromSamples(samples: readonly Sample[], warmupTicks: number): Record<string, number> {
   const start = samples.find((s) => s.tick >= warmupTicks) ?? samples[0];
   const end = samples[samples.length - 1];
@@ -183,6 +234,10 @@ export function evaluateExpectations(s: Scenario, runs: readonly RunResult[], fl
       case "rate-at-least": {
         const m = summary[e.item]?.mean ?? 0;
         return { expectation: e, passed: m >= e.perHour, message: `${e.item}: ${m.toFixed(1)}/h measured, at least ${e.perHour}/h expected.` };
+      }
+      case "rate-at-most": {
+        const m = summary[e.item]?.mean ?? 0;
+        return { expectation: e, passed: m <= e.perHour, message: `${e.item}: ${m.toFixed(1)}/h measured, at most ${e.perHour}/h allowed.` };
       }
       case "no-ground-items": {
         const n = events.filter((x) => x.type === "ground-items").length;

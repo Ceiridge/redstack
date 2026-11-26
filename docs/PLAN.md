@@ -42,7 +42,16 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [x] Block-state validation against Minecraft's block data (via Nucleation)
 - [x] Environments (version, platform, server settings) with presets
 - [x] Importing schematics as components (`schematicComponent`), `redstack inspect`
+- [x] Hopper router: `route`, `collect` (Steiner tree, greedy), `distribute` (branches below network hoppers); avoids draining, injection, steady redstone power and reserved space
+- [x] `converts` rates (input item → output item), so starved machines show up in the flow model
 - [ ] Mirroring components
+
+### Phase 1b – Layout solver
+The router places transport between fixed components. Choosing the positions and rotations of the components themselves – the compact, nested layouts – is a combinatorial problem for a constraint solver.
+- [ ] Constraint model: components with candidate positions/rotations, no overlap, reserved space, docking ports adjacent, objective = volume or hopper count
+- [ ] Solver behind an interface (CP-SAT / SAT via WASM, chosen under the dependency policy), with the greedy placement as the fallback
+- [ ] Water streams and dropper elevators as further transport types for the router
+- [ ] Optimal Steiner trees for small collectors (exact search) instead of the greedy heuristic
 
 ### Phase 2 – Flow model ✅
 - [x] Rates per port, bottlenecks, fill times, inputs, lost items, dead ends
@@ -110,12 +119,11 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [ ] Simulation via Nucleation/redpiler
 
 ## Open decisions
-- Project name (working title "redstack")
 - Which version does the target server run? Mechanics can differ between versions.
 - Viewer technology (phase 4)
 - LP solver (phase 2b)
 
 ## Next steps
-1. Analyse hand-picked donut.build farms (kelp first) and rebuild them as components
-2. Bridge assembly → process, then the optimizer (phase 2b)
-3. More components with tests (phase 5), starting with water-based collection
+1. Layout solver (phase 1b), starting with placing a few components compactly around a router
+2. Bridge assembly → process, then the optimizer (phase 2b) – the kelp farm needs it: it only pays if kelp sells above bone meal
+3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark

@@ -20,10 +20,11 @@ The server listens on 127.0.0.1 only, uses a void world, and does not pause when
 
 ## How a run works
 
-1. Force-load and clear the test area, lay a barrier catch floor (lost items stay visible)
-2. Put a Carpet fake player on a glass platform above the assembly – without a player nearby there are no random ticks or spawns
-3. Place blocks bottom-up, run the preparation actions
+1. Force-load and clear the test area – at least a fixed 80 × 72 × 80 region around the origin, so leftovers of a larger earlier design (a TNT duper, flowing lava) cannot leak into the run – kill all entities there, lay a barrier catch floor (lost items stay visible) and, for `terrain: "flat"`, a stone ground layer
+2. Place blocks bottom-up: with block updates (`placement: "with-updates"`, like a player building) or exactly as given (`"strict"`, for snapshots of working farms whose redstone would fire while half built)
+3. Put a Carpet fake player at the AFK spot (on a glass platform unless the design has a floor there) – without a player nearby there are no random ticks or spawns – and run the preparation actions: fill containers, set blocks, or `use` a block like a player (levers: a replaced lever does not update the block it is attached to)
 4. Keep the game frozen; advance with `tick sprint`; sample storage contents against the actual game time
+   Measured are the storage ports, or the containers and the player's inventory named in the scenario (`measure`); negative rates are consumption
 5. Report events with locations: items on the ground (with positions), backed-up hoppers
 6. Report server time per tick while fast-forwarding (a lag indicator; meaningful for long runs)
 
@@ -36,3 +37,4 @@ Speed on 2 CPU cores: ~10,000–20,000 ticks per second for small farms (4 in-ga
 - The fill limit is the game rule `max_block_modifications` (Carpet's `fillLimit` is gone)
 - With players online, `tick sprint N` runs N+1 ticks; the backend measures the actual game time
 - The fake player's login takes a few ticks to complete
+- `setblock … strict` and `fill … strict` place without block updates

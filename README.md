@@ -53,6 +53,25 @@ The first cactus design here passed every static check – and delivered **15 %*
 
 Every number comes from repeated in-game runs; the full story, including the wrong turns, is in [docs/experiments/cactus.md](docs/experiments/cactus.md).
 
+### Learning from real farms
+
+redstack reads existing schematics, so proven designs can be measured instead of trusted. The *Small Fast Kelp Farm* from donut.build turned out to be a 1 : 1 bone meal → kelp converter (18,000/h) in which two of its four dispensers never fire successfully. The rebuild keeps its redstone core, drops the idle dispensers and lets the router lay the supply hoppers – **6 hoppers and 2 chests instead of 9 hoppers and 6 chests**, same measured output. Details, including a TNT-duper cobblestone farm at ≈ 208,000/h: [docs/experiments/donut-benchmarks.md](docs/experiments/donut-benchmarks.md).
+
+<p align="center">
+  <img src="docs/images/kelp-farm-3d.png" alt="3D render of the rebuilt kelp farm: a glass water column above a note block and observers, two supply chests on either side whose hoppers lead down into the two dispensers beside the kelp." width="560">
+</p>
+
+```ts
+export default assembly("kelp-farm", (f) => {
+  const core = f.add(KelpBonemealCore).at([0, 0, 0]);
+  const west = f.add(SupplyChest, { item: "minecraft:bone_meal" }).at([-1, 3, 1]);
+  const east = f.add(SupplyChest, { item: "minecraft:bone_meal" }).at([3, 3, 3]);
+  f.route(west.port("out"), core.port("bonemealWest"));   // hoppers placed and oriented by the router
+  f.route(east.port("out"), core.port("bonemealEast"));
+  f.connect(core.port("kelp"), f.add(PlayerPickup).at([1, 1, 5]).port("in"));
+});
+```
+
 ## Concepts
 
 **Components nest.** A component has blocks, ports and a rate model, and may contain other components. A farm is just the top-level component, so a cell, a row of cells, a farm and a whole base compose the same way.
@@ -66,6 +85,8 @@ export const CactusRow = component({ name: "CactusRow", params: { cells: 8 } }, 
 ```
 
 **Relations, not coordinates.** Blocks are placed with `above`, `inFrontOf`, `rightOf`, …; the first block is the anchor. `to()` docks the next component onto the only matching output → input and returns it, so pipelines read left to right: `supply.to(HopperLine({ length: 8 })).to(Chest)`.
+
+**Transport is solved, not drawn.** `route(from, to)` lays the shortest hopper chain between two ports, `collect([...], to)` merges several outputs into one input with a shared hopper tree, `distribute(from, [...])` feeds several inputs through branches. The router knows the hopper rules: hoppers never carry items up, never sit under a foreign container (they would drain it) or above a foreign hopper, never where another hopper or dropper pushes in, never next to steady redstone power, and never in space a component keeps clear. Impossible routes are reported with the reason ("hoppers cannot move items up …"). The generated hoppers are a component with a rate like any other, so the flow model sees them – one hopper moves 9,000 items/h, and a supply line that starves a machine shows up as a bottleneck.
 
 **Materials, not hard-coded blocks.** Components ask for a slot such as "any fence" (`#minecraft:fences`) or "any plain solid block" (`#redstack:solid`) with a default. Build with what you have: `assembly(name, build, { materials: { cactusBreaker: "minecraft:spruce_fence" } })` – the checks verify the choice against Minecraft's block tags.
 
@@ -132,6 +153,7 @@ pnpm server setup ../redstack-server --accept-eula   # pinned, checksum-verified
 pnpm server start ../redstack-server
 cp ../redstack-server/.env .env
 pnpm test:game
+pnpm test:game:benchmarks   # third-party designs; see examples/src/benchmarks.ts for the files
 ```
 
 Four in-game hours take about 25 seconds. Backends implement one interface; the Fabric + Carpet server is the first. Details: [packages/backend-fabric](packages/backend-fabric/README.md).
@@ -144,6 +166,9 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | `CactusCell` | game-tested | the earlier ring design, kept for comparison |
 | `HopperLine` | game-tested | 9,000 items/h measured = model |
 | `Chest`, `SupplyChest` | game-tested | storage and test fixture in every scenario |
+| `KelpBonemealCore` | game-tested | 18,000 bone meal/h → ≈ 16,800 kelp/h, model matches |
+| `PlayerPickup` | game-tested | the AFK player as an item sink, counted in tests |
+| `route` / `collect` / `distribute` | game-tested | three chests merged past a wall and a decoy chest: 9,000/h = model, nothing drained from the decoy |
 
 *game-tested* = passes on the Fabric test server with Minecraft 26.3; not yet confirmed on a production server.
 
@@ -151,7 +176,7 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 
 | Package | Purpose |
 |---|---|
-| [`core`](packages/core) | components, ports, assemblies, materials, environments, static checks – no dependencies |
+| [`core`](packages/core) | components, ports, assemblies, materials, environments, hopper router, static checks – no dependencies |
 | [`flow`](packages/flow) | flow model |
 | [`stdlib`](packages/stdlib) | components and environment presets |
 | [`nucleation`](packages/nucleation) | adapter for [Nucleation](https://github.com/Schem-at/Nucleation): schematic I/O, block registry, 3D meshes |
