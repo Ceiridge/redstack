@@ -69,4 +69,4 @@ crafted).
 
 The limit is the slab stream over the loaders, the same trap as in the experiment above: only the loader
 hoppers of the first two rows are full (z = 4 and 8), the three rows after them get almost nothing – items lie in
-the bowls of the full hoppers instead of floating on. 100 crafters could press far more (three blocks per craft).
+the bowls of the full hoppers instead of floating on. 100 crafters could press far more (three blocks per craft). `redstack inspect tuff-deepslate-slab-crafter.litematic --report out/reports/slab-crafter-lever-80k.report.json -o x.svg` shows it: the backed-up hoppers cluster at the first loader rows, lost items lie in the stream above them and below the build.

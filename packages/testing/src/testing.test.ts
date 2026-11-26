@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { assembly } from "@redstack/core";
-import { evaluateExpectations, ratesFromSamples, scenario, summarize } from "./index.js";
+import { evaluateExpectations, ratesFromSamples, reportDiagnostics, scenario, summarize } from "./index.js";
 
 describe("measurement maths", () => {
   it("computes hourly rates after the warm-up", () => {
@@ -54,5 +54,41 @@ describe("expectations", () => {
   it("defaults to placement with updates and storage-port measurement", () => {
     assert.equal(s.placement, "with-updates");
     assert.deepEqual(s.measure, {});
+  });
+});
+
+describe("test findings in place", () => {
+  it("turns events and failed expectations into located diagnostics, once per place", () => {
+    const report = {
+      schemaVersion: 1 as const,
+      scenario: "x",
+      backend: "fabric-carpet",
+      startedAt: "",
+      summary: {},
+      passed: false,
+      expectations: [{ expectation: { type: "no-ground-items" as const }, passed: false, message: "5 items on the ground." }],
+      runs: [
+        {
+          run: 0,
+          ticks: 100,
+          measuredPerHour: {},
+          samples: [],
+          wallClockMs: 1,
+          events: [
+            { tick: 100, type: "stuck-hopper" as const, at: [1, 2, 3] as const, message: "Backed up: 320 items in a hopper of A#1.", data: { items: 320, instance: "A#1" } },
+            { tick: 100, type: "stuck-hopper" as const, at: [1, 2, 3] as const, message: "again", data: {} },
+            { tick: 100, type: "ground-items" as const, at: [4, 0, 4] as const, message: "5 item(s)", data: { items: 5, positions: [[4, 0, 4], [5, 0, 4]] } },
+          ],
+        },
+      ],
+    };
+    const d = reportDiagnostics(report);
+    assert.deepEqual(d.map((x) => [x.code, x.at?.join(",") ?? ""]), [
+      ["test-backed-up", "1,2,3"],
+      ["test-ground-items", "4,0,4"],
+      ["test-ground-items", "5,0,4"],
+      ["test-expectation", ""],
+    ]);
+    assert.deepEqual(d[0]!.instances, ["A#1"]);
   });
 });

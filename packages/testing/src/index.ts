@@ -9,7 +9,7 @@
  *   3  whole assembly, several runs, statistics
  */
 
-import type { ResolvedAssembly, Vec3 } from "@redstack/core";
+import type { Diagnostic, ResolvedAssembly, Vec3 } from "@redstack/core";
 import { type FlowAnalysis, analyzeFlow } from "@redstack/flow";
 
 /** What a backend can simulate. Scenarios require capabilities, backends provide them. */
@@ -202,6 +202,40 @@ export interface TestReport {
   readonly summary: Readonly<Record<string, { readonly mean: number; readonly stdev: number }>>;
   readonly expectations: readonly ExpectationResult[];
   readonly passed: boolean;
+}
+
+/**
+ * Findings from a test report, placed where they happened – for the viewer
+ * and the checks' output: backed-up hoppers, where lost items lay, failed
+ * expectations. Positions are in the tested design's coordinates.
+ */
+export function reportDiagnostics(report: TestReport): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const seen = new Set<string>();
+  for (const run of report.runs) {
+    for (const e of run.events) {
+      if (e.type === "stuck-hopper" && e.at) {
+        const k = `stuck|${e.at.join(",")}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const instance = typeof e.data?.["instance"] === "string" ? [e.data["instance"] as string] : [];
+        out.push({ severity: "warning", code: "test-backed-up", message: `In the test (${report.backend}): ${e.message}`, at: e.at, instances: instance });
+      } else if (e.type === "ground-items") {
+        const positions = (Array.isArray(e.data?.["positions"]) ? (e.data["positions"] as Vec3[]) : e.at ? [e.at] : []).slice(0, 10);
+        for (const p of positions) {
+          const k = `ground|${p.join(",")}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          const total = typeof e.data?.["items"] === "number" ? ` (${e.data["items"]} lost in total)` : "";
+          out.push({ severity: "error", code: "test-ground-items", message: `In the test (${report.backend}): items on the ground here${total}.`, at: p });
+        }
+      } else if (e.at) {
+        out.push({ severity: "warning", code: `test-${e.type}`, message: `In the test (${report.backend}): ${e.message}`, at: e.at });
+      }
+    }
+  }
+  for (const x of report.expectations) if (!x.passed) out.push({ severity: "error", code: "test-expectation", message: `In the test (${report.backend}): ${x.message}` });
+  return out;
 }
 
 export interface TestBackend {

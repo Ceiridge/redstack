@@ -49,7 +49,7 @@ You describe a farm from reusable components. redstack checks it against Minecra
 - **Static checks** – block states against Minecraft's block table, overlaps, cells that must stay free, port alignment, redstone crosstalk.
 - **Flow model** – items per hour at every port, bottlenecks, storage fill times, recipes limited by their scarcest ingredient.
 - **In-game tests** – scenarios run on a Fabric + Carpet server (or in Nucleation's mc-tick engine), fast-forwarded and compared with the model: rates, lost items, backed-up hoppers, server time per tick.
-- **Viewer** – textured 3D model and an isometric debug view with flows and findings.
+- **Viewer** – textured 3D model and an isometric debug view with flows and findings, including where a test found backed-up hoppers and lost items (`--report`).
 - **Import and export** – read any `.litematic`/`.schem` (block entities included) to measure proven designs; write `.litematic`/`.schem`.
 - **Economy** – a farm as a process (in, out, build cost, break-even); a mixed-integer optimizer picks the most profitable set of farms per AFK spot.
 - **Standard library** – game-tested farm parts: cactus rows, kelp core, shulker loaders and unloaders, item filter, smelters, crafters for any recipe, clocks with switches, and more ([list](docs/COMPONENTS.md)).
@@ -97,7 +97,7 @@ redstack flow    <module.js>                  # flow model
 redstack build   <module.js> -o farm.litematic [--data-version n]
 redstack render  <module.js> -o farm.html     # viewer (3D if assets exist) – or .svg
 redstack all     <module.js> -o farm.litematic
-redstack inspect farm.litematic [-o farm.html]  # analyse any schematic: size, materials, checks, viewer
+redstack inspect farm.litematic [-o farm.html|.svg] [--report r.json]  # analyse any schematic; a test report adds its findings in place
 redstack test    <scenarios.js> [name...]      # in-game tests
 redstack economy <module.js> [--prices p.json] # in/out per hour, build cost, break-even, profit
 redstack optimize <plan.json>                  # which farms how often at which AFK spot

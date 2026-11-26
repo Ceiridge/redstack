@@ -7,7 +7,7 @@
  *   redstack build   <module.js> -o <file>     schematic (.litematic / .schem)
  *   redstack render  <module.js> -o <file>     picture (.svg) or viewer (.html, 3D if assets exist)
  *   redstack all     <module.js> -o <file>     all of the above
- *   redstack inspect <file.litematic> [-o x.html]   analyse an existing schematic
+ *   redstack inspect <file.litematic> [-o x.html] [--report r.json]   analyse an existing schematic (with a test report: its findings in place)
  *   redstack test    <scenarios.js> [name...] [--backend fabric|mc-tick]  in-game scenarios (see test-command.ts)
  *   redstack economy <module.js> [--prices f.json] [--fee 0.05] [--ms-per-tick n]
  *                                              in and out per hour, build cost, break-even, profit
@@ -37,6 +37,7 @@ import {
 } from "@redstack/core";
 import { analyzeFlow, formatFlowReport } from "@redstack/flow";
 import { defaultResourcePackPath, formatOf, meshGlb, nativeDataVersion, nucleationWriter, registry, schematicComponent } from "@redstack/nucleation";
+import { type TestReport, reportDiagnostics } from "@redstack/testing";
 import { toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { economyCommand } from "./economy-command.js";
 import { optimizeCommand } from "./optimize-command.js";
@@ -63,7 +64,7 @@ async function loadAssembly(path: string): Promise<Assembly> {
 
 function usage(): never {
   console.error(
-    "usage: redstack <check|flow|build|render|all|inspect|test|economy|optimize> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json] [--prices file.json] [--fee x] [--ms-per-tick n]",
+    "usage: redstack <check|flow|build|render|all|inspect|test|economy|optimize> <module.js|file> [-o file] [--format litematic|schem] [--data-version n] [--rotation n] [--title text] [--no-3d] [--json] [--prices file.json] [--fee x] [--ms-per-tick n] [--report test.report.json]",
   );
   process.exit(2);
 }
@@ -89,12 +90,15 @@ async function main(): Promise<void> {
       backend: { type: "string" },
       fee: { type: "string" },
       "ms-per-tick": { type: "string" },
+      report: { type: "string" },
     },
   });
   const [cmd, target, ...rest] = positionals;
   const commands = ["check", "flow", "build", "render", "all", "inspect", "test", "economy", "optimize"];
   if (!cmd || !target || !commands.includes(cmd)) usage();
   const with3d = !values["no-3d"];
+  // Findings of an in-game test, shown where they happened
+  const testDiags = values.report ? reportDiagnostics(JSON.parse(readFileSync(resolve(values.report), "utf8")) as TestReport) : [];
 
   if (cmd === "test") {
     const passed = await testCommand(target, rest, {
@@ -115,7 +119,7 @@ async function main(): Promise<void> {
     const Imported = schematicComponent({ name, bytes: new Uint8Array(readFileSync(target)), format: formatOf(target) });
     const resolved = toAssembly(Imported, name).resolve();
     const { min, max } = bounds(resolved);
-    const diags = runChecks(resolved, { registry }).filter((d) => d.code !== "possible-crosstalk");
+    const diags = [...runChecks(resolved, { registry }).filter((d) => d.code !== "possible-crosstalk"), ...testDiags];
     const bom = billOfMaterials(resolved);
     if (values.json) console.log(JSON.stringify({ size: [0, 1, 2].map((k) => max[k]! - min[k]! + 1), blocks: resolved.blocks.size, bom, diagnostics: diags }, null, 2));
     else {
@@ -126,7 +130,8 @@ async function main(): Promise<void> {
     if (values.out) {
       const out = resolve(values.out);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, viewer(resolved, toVizModel(resolved, undefined, diags, { registry }), with3d));
+      const m = toVizModel(resolved, undefined, diags, { registry });
+      writeFileSync(out, out.endsWith(".svg") ? toSvg(m, { rotation: Number(values.rotation), ...(values.title ? { title: values.title } : {}) }) : viewer(resolved, m, with3d));
       console.log(`Viewer: ${out}`);
     }
     return;
@@ -136,7 +141,7 @@ async function main(): Promise<void> {
   const diags = runChecks(assembly, { registry });
   const flow = analyzeFlow(assembly);
   const allDiags = [...diags, ...flow.diagnostics];
-  const model = () => toVizModel(assembly, flow, allDiags, { registry });
+  const model = () => toVizModel(assembly, flow, [...allDiags, ...testDiags], { registry });
 
   if (cmd === "check" || cmd === "all") {
     if (values.json) console.log(JSON.stringify(allDiags, null, 2));

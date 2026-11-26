@@ -94,7 +94,8 @@ The router places transport between fixed components. Choosing the positions and
 - [x] Standalone interactive viewer: rotate, cut away layers, toggle overlays, list of findings (`redstack render -o x.html`)
 - [x] Textured 3D view (Nucleation mesh + three.js), findings as boxes, `#figure` mode for pictures
 - [x] Colours and shapes from block facts instead of a hard-coded table
-- [ ] Events from in-game tests in the viewer, comparison of two runs
+- [x] Events from in-game tests in the viewer (`--report`: backed-up hoppers, lost items, failed expectations in place)
+- [ ] Comparison of two runs
 
 **Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
