@@ -14,6 +14,7 @@ import { type RenderOptions, toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { cactusFarm } from "./cactus-farm.js";
 import debuggerDemo from "./debugger-demo.js";
 import { kelpFarm } from "./kelp-farm.js";
+import { factory } from "./factory.js";
 import { kelpTwin } from "./kelp-twin.js";
 
 function model(assembly: Assembly) {
@@ -40,5 +41,8 @@ if (existsSync(defaultResourcePackPath())) {
   writeFileSync("out/kelp-farm-3d.html", toHtml(kelp.model, { glb: meshGlb(kelp.resolved) }));
   const twin = model(kelpTwin());
   writeFileSync("out/kelp-twin-3d.html", toHtml(twin.model, { glb: meshGlb(twin.resolved) }));
+  // Hero picture: the blocks only, no findings or flow labels
+  const facResolved = factory().resolve();
+  writeFileSync("out/factory-3d.html", toHtml(toVizModel(facResolved, undefined, [], { registry }), { glb: meshGlb(facResolved) }));
   console.log("out/figure-3d.html, out/kelp-farm-3d.html, out/kelp-twin-3d.html (run scripts/figures.sh for the PNGs)");
 }
