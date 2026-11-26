@@ -45,14 +45,14 @@ You describe a farm from reusable components. redstack checks it against Minecra
 ## Features
 
 - **Components that nest** – blocks, ports and a rate model; a cell, a row, a farm and a base compose the same way. Materials are slots ("any fence"), mirrored variants come for free.
-- **Transport and layout are solved, not drawn** – the router lays hopper chains, trees and splits that obey the hopper rules; a branch-and-bound layout search places free components and minimises size and hopper count.
+- **Transport, wiring and layout are solved, not drawn** – the router lays hopper chains, trees and splits that obey the hopper rules, and redstone wires (dust, repeaters, stairs) that touch nothing they should not and report their delay in game ticks; a branch-and-bound layout search places free components and minimises size and hopper count.
 - **Static checks** – block states against Minecraft's block table, overlaps, cells that must stay free, port alignment, redstone crosstalk.
 - **Flow model** – items per hour at every port, bottlenecks, storage fill times, recipes limited by their scarcest ingredient.
 - **In-game tests** – scenarios run on a Fabric + Carpet server (or in Nucleation's mc-tick engine), fast-forwarded and compared with the model: rates, lost items, backed-up hoppers, server time per tick.
 - **Viewer** – textured 3D model and an isometric debug view with flows and findings.
 - **Import and export** – read any `.litematic`/`.schem` (block entities included) to measure proven designs; write `.litematic`/`.schem`.
 - **Economy** – a farm as a process (in, out, build cost, break-even); a mixed-integer optimizer picks the most profitable set of farms per AFK spot.
-- **Standard library** – game-tested farm parts: cactus rows, kelp core, shulker loaders and unloaders, item filter, smelters, crafters for any recipe, and more ([list](docs/COMPONENTS.md)).
+- **Standard library** – game-tested farm parts: cactus rows, kelp core, shulker loaders and unloaders, item filter, smelters, crafters for any recipe, clocks with switches, and more ([list](docs/COMPONENTS.md)).
 
 ## What testing finds
 

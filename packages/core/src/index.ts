@@ -10,3 +10,4 @@ export * from "./checks.js";
 export * from "./routing.js";
 export * from "./layout.js";
 export * from "./export.js";
+export * from "./wiring.js";

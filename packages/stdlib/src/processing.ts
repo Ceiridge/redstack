@@ -334,7 +334,9 @@ export const PatternCrafter = component(
     c.block(B.of("minecraft:barrel", { facing: "up", open: false })).at([0, -1, 0]);
     const out = c.block(B.hopper().outputTo("down")).at([0, -2, 0]);
 
-    // Feeding hoppers and their "not ready" torches, built for the west face and turned
+    // Feeding hoppers and their "not ready" torches, built for the west face and turned.
+    // The cells the feeding hoppers come in through stay free of wiring
+    const approach: Vec3[] = [];
     feeds.forEach((feed, i) => {
       const k = FACES.indexOf(feed.face);
       const at = (v: Vec3) => turn(v, k);
@@ -345,6 +347,7 @@ export const PatternCrafter = component(
       dust(at([-2, 0, -2])); // s − 1: powers the block only for s ≥ 2
       c.block(solid()).at(at([-3, 0, -2]));
       c.block(B.of("minecraft:redstone_wall_torch", { facing: turnDir("west", k), lit: true })).at(at([-4, 0, -2]));
+      approach.push(at([-2, 0, 0]), at([-2, 1, 0]));
       c.input(feed.face, hopper, { item: feed.item, description: `${feed.item} (${i + 1} of ${feeds.length} feeds)` });
     });
 
@@ -357,19 +360,10 @@ export const PatternCrafter = component(
     const period = torchClockPeriod(need);
     c.block(B.repeater(1).signalTowards("north")).at([-2, -1, -5]);
     c.block(solid()).at([-2, -2, -5]);
-    void clock;
 
-    // Clock output → up a dust stair → repeaters along x = 0 → dust on the crafter's top block
-    dust([-1, -1, -6]);
-    dust([-1, 0, -7]);
-    dust([-1, 1, -8]);
-    dust([-1, 2, -9]);
-    dust([0, 2, -9]);
-    for (let z = -8; z <= -1; z++) {
-      c.block(B.repeater(1).signalTowards("south")).at([0, 2, z]);
-      c.block(solid()).at([0, 1, z]);
-    }
-    dust([0, 2, 0]);
+    // Clock → the block on top of the crafter, laid by the wire router
+    c.block(solid()).at([0, 1, 0]);
+    c.wire(clock.port("out"), [0, 1, 0], { avoid: approach });
 
     c.output("out", out.down, { item: recipe.result });
     const craftsPerHour = 72_000 / period;

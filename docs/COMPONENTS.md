@@ -22,6 +22,7 @@ The standard library ([`packages/stdlib`](../packages/stdlib)) and what each com
 | `EdgeDetector` | game-tested | observer watching a note block: a 2-tick pulse on every edge (measured: twice the clock's rate) |
 | `PulseCounter` | game-tested | test fixture: a dropper drops one item into a chest per rising edge |
 | `route` / `collect` / `distribute` | game-tested | three chests merged past a wall and a decoy chest: 9,000/h = model, nothing drained from the decoy |
+| `wire` | game-tested | a TorchClock wired over a wall to a pulse counter two blocks up, past a hopper line: every pulse arrives (3,600/h), the hopper line keeps 9,000/h; the PatternCrafter's clock line, now routed, 8 elements instead of 14, same rates |
 
 *game-tested* = passes on the Fabric test server with Minecraft 26.3; not yet confirmed on a production server.
 

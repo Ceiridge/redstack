@@ -20,6 +20,7 @@ import {
   type Rotation,
   type Vec3,
   DIR_VECTORS,
+  OPPOSITE,
   add,
   isRelDir,
   key,
@@ -31,6 +32,8 @@ import {
 import type { MaterialChoices, MaterialSlot } from "./materials.js";
 import { type FreeItem, type LayoutEnd, type LayoutLink, solveLayout } from "./layout.js";
 import { type HopperCell, type RouteResult, type RoutingWorld, hopperSplit, hopperTarget, hopperTree, poweredCells, routeHoppers } from "./routing.js";
+import { M } from "./materials.js";
+import { type WireOptions, routeWire } from "./wiring.js";
 
 // ---------- Ports and rates ----------
 
@@ -583,6 +586,7 @@ export class ComponentBuilder {
   readonly #materials: MaterialUse[] = [];
   readonly #counters = new Map<string, number>();
   readonly #routes: RouteRequest[] = [];
+  readonly #wires: Array<{ from: RouteEnd; to: RouteEnd; opts: WireOptions & { readonly id?: string; readonly margin?: number } }> = [];
   #layoutOpts: LayoutOptions = {};
   readonly #freePlaced = new Map<string, ChildPlacement>();
 
@@ -752,6 +756,18 @@ export class ComponentBuilder {
     this.#routes.push({ kind: "distribute", from: [from], to, opts });
   }
 
+  /**
+   * Connects a signal output to a signal input with redstone that the wire
+   * router lays: dust on support blocks, repeaters where the signal would
+   * die, dust stairs for height. It touches nothing it should not power and
+   * picks up no foreign power (see wiring.ts). `minDelayTicks`: at least this
+   * delay in game ticks. Solved before the hopper routes, which then keep
+   * away from it. The delay is in the generated child's notes.
+   */
+  wire(from: RouteEnd, to: RouteEnd, opts: WireOptions & { readonly id?: string; readonly margin?: number } = {}): void {
+    this.#wires.push({ from, to, opts });
+  }
+
   // ----- own ports and rates -----
 
   input(name: string, cells: CellsArg, opts: PortOptions = {}): void {
@@ -882,6 +898,8 @@ export class ComponentBuilder {
       if (p) children.push({ id: inst.id, template: inst.template, origin: p.origin, rotation: p.rotation });
     }
 
+    const wired = this.#solveWires(children, diagnostics);
+    children.push(...wired.children);
     const routed = this.#solveRoutes(children, diagnostics);
     children.push(...routed.children);
 
@@ -899,7 +917,7 @@ export class ComponentBuilder {
 
     const endpoint = (r: PortRef): PortEndpoint => (r.instance ? { child: r.instance.id, port: r.port } : { port: r.port });
     const connections = [...this.#connections];
-    const routeConnections = routed.connections;
+    const routeConnections = [...wired.connections, ...routed.connections];
     for (const inst of this.#children) {
       const pl = inst._placement;
       if (pl.kind !== "attach") continue;
@@ -1033,6 +1051,116 @@ export class ComponentBuilder {
       results.push({ req, label, hoppers: best.hoppers, starts: starts as Vec3[] });
     }
     return results;
+  }
+
+  /** Lays the requested wires, one after another, each seeing the ones before. */
+  #solveWires(
+    children: readonly ChildTemplate[],
+    diagnostics: Diagnostic[],
+  ): { children: ChildTemplate[]; connections: Array<{ from: PortEndpoint; to: PortEndpoint }> } {
+    const out = { children: [] as ChildTemplate[], connections: [] as Array<{ from: PortEndpoint; to: PortEndpoint }> };
+    if (this.#wires.length === 0) return out;
+    const { blocks, clear } = this.#occupancy(children);
+    const endpointOf = (end: RouteEnd): PortEndpoint | undefined =>
+      Array.isArray(end) ? undefined : (end as PortRef).instance ? { child: (end as PortRef).instance!.id, port: (end as PortRef).port } : { port: (end as PortRef).port };
+    const cellOf = (end: RouteEnd, direction: PortDirection) => (Array.isArray(end) ? (end as Vec3) : this.#portCells(children, end as PortRef, direction)?.[0]);
+    const support = this.material(M.solid);
+    for (const w of this.#wires) {
+      const label = "Wire";
+      const start = cellOf(w.from, "out");
+      const target = cellOf(w.to, "in");
+      if (!start || !target) {
+        diagnostics.push({ severity: "error", code: "wire-failed", message: `${label}: an end is not placed (unplaced child?).` });
+        continue;
+      }
+      // The source: a diode next to the start cell pointing into it gives the direction
+      let sourceDir: "north" | "east" | "south" | "west" | undefined;
+      for (const d of ["north", "east", "south", "west"] as const) {
+        const b = blocks.get(key(add(start, DIR_VECTORS[OPPOSITE[d]])));
+        if (b && ["minecraft:repeater", "minecraft:comparator"].includes(b.block.id) && b.block.props["facing"] === OPPOSITE[d]) sourceDir = d;
+      }
+      const powered = poweredCells(blocks.values());
+      const m = w.opts.margin ?? 6;
+      const min: Vec3 = [0, 1, 2].map((i) => Math.min(start[i]!, target[i]!) - m) as unknown as Vec3;
+      const max: Vec3 = [0, 1, 2].map((i) => Math.max(start[i]!, target[i]!) + m) as unknown as Vec3;
+      const r = routeWire(
+        {
+          occupied: (p) => blocks.has(key(p)) || clear.has(key(p)),
+          blockAt: (p) => {
+            const b = blocks.get(key(p));
+            if (!b) return undefined;
+            const f = b.block.props["facing"];
+            return typeof f === "string" ? { id: b.block.id, facing: f } : { id: b.block.id };
+          },
+          powered: (p) => powered.has(key(p)),
+          min,
+          max,
+        },
+        start,
+        target,
+        sourceDir,
+        w.opts,
+      );
+      if (!r.ok) {
+        diagnostics.push({ severity: "error", code: "wire-failed", message: r.message, at: start });
+        continue;
+      }
+      const n = (this.#counters.get(label) ?? 0) + 1;
+      this.#counters.set(label, n);
+      const id = w.opts.id ?? `${label}#${n}`;
+      const wireBlocks: Array<{ pos: Vec3; block: BlockSpec }> = [
+        ...r.supports.map((pos) => ({ pos, block: makeBlock(support.replace("minecraft:", "")) })),
+        ...r.elements.map((e) => ({
+          pos: e.pos,
+          block:
+            e.kind === "dust"
+              ? makeBlock("redstone_wire", {})
+              : makeBlock("repeater", { facing: OPPOSITE[e.towards], delay: e.delay, locked: false, powered: false }),
+        })),
+      ];
+      for (const b of wireBlocks) blocks.set(key(b.pos), b);
+      for (const c of r.clear) clear.add(key(c));
+      // An end given as a cell has no port to connect to
+      const inPort: PortDef = { name: "in", direction: "in", kind: "signal", cells: [start], description: "wire start", ...(Array.isArray(w.from) ? { optional: true } : {}) };
+      const outPort: PortDef = {
+        name: "out",
+        direction: "out",
+        kind: "signal",
+        cells: [target],
+        description: `${r.delayTicks} game ticks, strength ${r.strength}`,
+        ...(Array.isArray(w.to) ? { optional: true } : {}),
+      };
+      const ports = new Map([
+        ["in", inPort],
+        ["out", outPort],
+      ]);
+      out.children.push({
+        id,
+        origin: [0, 0, 0],
+        rotation: 0,
+        template: {
+          typeName: label,
+          status: "game-tested",
+          params: { elements: r.elements.length, delayTicks: r.delayTicks },
+          blocks: wireBlocks,
+          clear: r.clear,
+          ports,
+          exposed: new Map(),
+          portView: ports,
+          children: [],
+          connections: [],
+          rates: [],
+          materials: [],
+          notes: [`${r.elements.length} element(s) laid by the wire router; delay ${r.delayTicks} game ticks, strength ${r.strength} at the target`],
+          diagnostics: [],
+        },
+      });
+      const fromEp = endpointOf(w.from);
+      if (fromEp) out.connections.push({ from: fromEp, to: { child: id, port: "in" } });
+      const toEp = endpointOf(w.to);
+      if (toEp) out.connections.push({ from: { child: id, port: "out" }, to: toEp });
+    }
+    return out;
   }
 
   /** Turns the routed requests into generated child components and their connections. */

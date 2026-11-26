@@ -317,6 +317,34 @@ export function torchClockScenario(period: number): Scenario {
   });
 }
 
+/**
+ * Wire router: a TorchClock wired to a pulse counter two blocks up and to the
+ * side, over a wall, past a hopper line it must not lock.
+ */
+export function wireScenario(): Scenario {
+  const r = assembly("wire-clock-counter", (f) => {
+    const clock = f.add(TorchClock({ period: 20 })).at([0, 0, 0]);
+    const counter = f.add(PulseCounter).at([12, 2, 5]);
+    for (let z = -2; z <= 8; z++) for (const y of [0, 1]) f.block(B.of("minecraft:stone")).at([7, y, z]);
+    f.wire(clock.port("out"), counter.port("in"));
+    // A hopper line beside the wire's way
+    f.add(SupplyChest).at([4, 2, 2]).to(HopperLine({ length: 4 })).to(Chest);
+  }).resolve();
+  const lineChest = [...r.instances.values()].find((i) => i.id === "Chest#1")!.origin;
+  return scenario(r, {
+    durationTicks: 4_000,
+    warmupTicks: 400,
+    sampleEveryTicks: 400,
+    actions: [{ type: "use", at: [0, 1, 0] }, { type: "insert", at: [4, 2, 2], item: "minecraft:stone", count: 27 * 64 }],
+    measure: { containers: [[13, 2, 5], lineChest], items: ["minecraft:cobblestone", "minecraft:stone"] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:cobblestone", perHour: 3_528 },
+      { type: "rate-at-most", item: "minecraft:cobblestone", perHour: 3_672 },
+      { type: "rate-at-least", item: "minecraft:stone", perHour: 8_800 },
+    ],
+  });
+}
+
 /** EdgeDetector behind a TorchClock: a pulse on both edges, so twice the clock's rate. */
 export function edgeDetectorScenario(): Scenario {
   const r = assembly("edge-detector", (f) => {
@@ -435,6 +463,7 @@ export const scenarios: Record<string, () => Scenario> = {
   "torch-clock-36": () => torchClockScenario(36),
   "torch-clock-100": () => torchClockScenario(100),
   "edge-detector": edgeDetectorScenario,
+  wire: wireScenario,
   "pattern-crafter": () => patternCrafterScenario(),
   "pattern-crafter-resume": () => patternCrafterScenario(true),
   "pattern-crafter-chest": () =>

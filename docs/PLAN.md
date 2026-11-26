@@ -123,7 +123,10 @@ The router places transport between fixed components. Choosing the positions and
 
 **Realistic expectation:** improvements and new combinations yes, fundamentally new mechanics rarely.
 
-### Phase 7 – Redstone logic (future)
+### Phase 7 – Redstone logic
+- [x] Clocks and edge detection in the stdlib (`TorchClock` with switch and lock, `EdgeDetector`), `PulseCounter` for tests; measured on Fabric and mc-tick
+- [x] Wire router `wire(from, to)`: dust, repeaters, stairs; no crosstalk; delay in game ticks
+- [ ] Observer chains (pulses through walls and up without stairs), comparator and hopper clocks, pulse extenders
 - [ ] Package `logic`: gates, registers, buses on top of `signal`/`bus` ports
 - [ ] Timing model (redstone ticks) as the counterpart of the flow model
 - [ ] Verilog import via Yosys instead of own logic synthesis
