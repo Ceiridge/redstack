@@ -8,7 +8,7 @@
  *   redstack render  <module.js> -o <file>     picture (.svg) or viewer (.html, 3D if assets exist)
  *   redstack all     <module.js> -o <file>     all of the above
  *   redstack inspect <file.litematic> [-o x.html]   analyse an existing schematic
- *   redstack test    <scenarios.js> [name...]  in-game scenarios (see test-command.ts)
+ *   redstack test    <scenarios.js> [name...] [--backend fabric|mc-tick]  in-game scenarios (see test-command.ts)
  *   redstack economy <module.js> [--prices f.json] [--fee 0.05] [--ms-per-tick n]
  *                                              in and out per hour, build cost, break-even, profit
  *   redstack optimize <plan.json>              which farms how often at which AFK spot (see optimize-command.ts)
@@ -86,6 +86,7 @@ async function main(): Promise<void> {
       title: { type: "string" },
       "no-3d": { type: "boolean", default: false },
       prices: { type: "string" },
+      backend: { type: "string" },
       fee: { type: "string" },
       "ms-per-tick": { type: "string" },
     },
@@ -96,7 +97,11 @@ async function main(): Promise<void> {
   const with3d = !values["no-3d"];
 
   if (cmd === "test") {
-    const passed = await testCommand(target, rest, { json: values.json ?? false, outDir: values.out ?? "out/reports" });
+    const passed = await testCommand(target, rest, {
+      json: values.json ?? false,
+      outDir: values.out ?? "out/reports",
+      ...(values.backend ? { backend: values.backend } : {}),
+    });
     process.exit(passed ? 0 : 1);
   }
 

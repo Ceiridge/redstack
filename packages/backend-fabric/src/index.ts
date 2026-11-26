@@ -27,6 +27,7 @@ import {
   type TestReport,
   evaluateExpectations,
   missingCapabilities,
+  storagePositions,
   ratesFromSamples,
   summarize,
 } from "@redstack/testing";
@@ -203,7 +204,7 @@ export class FabricCarpetBackend implements TestBackend {
     }
 
     // 4. Measure
-    const sinks = (s.measure.containers ?? sinkPositions(a)).map(w);
+    const sinks = (s.measure.containers ?? storagePositions(a)).map(w);
     const items = s.measure.items ?? [
       ...new Set([...Object.keys(analyzeFlow(a).storedPerHour), ...s.actions.flatMap((x) => (x.type === "insert" ? [x.item] : []))]),
     ];
@@ -351,19 +352,6 @@ export function standingCell(a: ResolvedAssembly, at: Vec3): Vec3 {
     if (free(lower) && free(feet)) return lower;
   }
   throw new Error(`No free cell next to (${at.join(",")}) to use it from; give "from" explicitly.`);
-}
-
-/** Positions of all storage (ports with a stores declaration). */
-function sinkPositions(a: ResolvedAssembly): Vec3[] {
-  const out: Vec3[] = [];
-  for (const inst of a.instances.values()) {
-    for (const r of inst.template.rates) {
-      if (r.type !== "stores") continue;
-      const cell = inst.ports.get(r.port)?.absCells[0];
-      if (cell) out.push(cell);
-    }
-  }
-  return out;
 }
 
 /** Thin layer over RCON with error checking. */

@@ -39,6 +39,9 @@
     },
     {
       "path": "./packages/planning"
+    },
+    {
+      "path": "./packages/backend-mctick"
     }
   ]
 }

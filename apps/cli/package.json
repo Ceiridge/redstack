@@ -21,7 +21,8 @@
     "@redstack/backend-fabric": "workspace:*",
     "@redstack/economy": "workspace:*",
     "@redstack/market-static": "workspace:*",
-    "@redstack/planning": "workspace:*"
+    "@redstack/planning": "workspace:*",
+    "@redstack/backend-mctick": "workspace:*"
   },
   "license": "MIT"
 }

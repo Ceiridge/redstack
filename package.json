@@ -18,7 +18,8 @@
     "test:game:benchmarks": "node --env-file=.env apps/cli/dist/main.js test examples/dist/benchmarks.js",
     "server": "node packages/backend-fabric/scripts/server.mjs",
     "figures": "pnpm run build && node examples/dist/figures.js",
-    "assets": "node packages/nucleation/scripts/assets.mjs"
+    "assets": "node packages/nucleation/scripts/assets.mjs",
+    "mctick:build": "cargo build --release --locked --manifest-path packages/backend-mctick/native/Cargo.toml"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

@@ -277,3 +277,17 @@ export function compareWithModel(
     message: problems.length ? problems.join("; ") : "Measurement matches the model.",
   };
 }
+
+/** Positions of all storage (ports with a stores declaration). */
+export function storagePositions(a: ResolvedAssembly): Vec3[] {
+  const out: Vec3[] = [];
+  for (const inst of a.instances.values()) {
+    for (const r of inst.template.rates) {
+      if (r.type !== "stores") continue;
+      const cell = inst.ports.get(r.port)?.absCells[0];
+      if (cell) out.push(cell);
+    }
+  }
+  return out;
+}
+

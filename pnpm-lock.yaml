@@ -20,6 +20,9 @@ importers:
       '@redstack/backend-fabric':
         specifier: workspace:*
         version: link:../../packages/backend-fabric
+      '@redstack/backend-mctick':
+        specifier: workspace:*
+        version: link:../../packages/backend-mctick
       '@redstack/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -67,6 +70,18 @@ importers:
         version: link:../packages/viz
 
   packages/backend-fabric:
+    dependencies:
+      '@redstack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@redstack/flow':
+        specifier: workspace:*
+        version: link:../flow
+      '@redstack/testing':
+        specifier: workspace:*
+        version: link:../testing
+
+  packages/backend-mctick:
     dependencies:
       '@redstack/core':
         specifier: workspace:*

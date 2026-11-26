@@ -1,0 +1,21 @@
+{
+  "name": "@redstack/backend-mctick",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test backend: mc-tick, Nucleation's vanilla-accurate tick engine, without a server",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@redstack/testing": "workspace:*",
+    "@redstack/core": "workspace:*",
+    "@redstack/flow": "workspace:*"
+  },
+  "license": "MIT"
+}
