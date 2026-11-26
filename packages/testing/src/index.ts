@@ -58,7 +58,9 @@ export type Action =
    * a real player, from `from` (default: a free neighbour cell, preferring the
    * side the block faces), then returns to the AFK spot.
    */
-  | { readonly type: "use"; readonly at: Vec3; readonly from?: Vec3 };
+  | { readonly type: "use"; readonly at: Vec3; readonly from?: Vec3 }
+  /** Spawns loose items (entities) in the middle of a cell, in stacks of 64, at rest – a burst for collectors and streams */
+  | { readonly type: "drop"; readonly at: Vec3; readonly item: string; readonly count: number };
 
 /**
  * How the design is placed. "with-updates" places block by block with normal
@@ -94,6 +96,14 @@ export type Expectation =
   | { readonly type: "no-stuck-hoppers" }
   | { readonly type: "matches-flow-model"; readonly tolerance: number };
 
+/** Loose items spawned during the measurement, like a farm's drops: every `everyTicks` (default 20) the share of `perHour` */
+export interface Feed {
+  readonly at: Vec3;
+  readonly item: string;
+  readonly perHour: number;
+  readonly everyTicks?: number;
+}
+
 export interface Scenario {
   readonly name: string;
   readonly assembly: ResolvedAssembly;
@@ -109,6 +119,8 @@ export interface Scenario {
   /** Actions before the start (filling containers etc.) */
   readonly placement: Placement;
   readonly actions: readonly Action[];
+  /** Items spawned while measuring */
+  readonly feeds: readonly Feed[];
   readonly measure: Measurement;
   readonly expectations: readonly Expectation[];
 }
@@ -123,6 +135,7 @@ export interface ScenarioOptions {
   readonly repeats?: number;
   readonly placement?: Placement;
   readonly actions?: readonly Action[];
+  readonly feeds?: readonly Feed[];
   readonly measure?: Measurement;
   readonly expectations?: readonly Expectation[];
 }
@@ -140,6 +153,7 @@ export function scenario(assembly: ResolvedAssembly, o: ScenarioOptions): Scenar
     repeats: o.repeats ?? 1,
     placement: o.placement ?? "with-updates",
     actions: o.actions ?? [],
+    feeds: o.feeds ?? [],
     measure: o.measure ?? {},
     expectations: o.expectations ?? [],
   };

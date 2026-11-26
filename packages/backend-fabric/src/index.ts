@@ -205,6 +205,13 @@ export class FabricCarpetBackend implements TestBackend {
       else if (act.type === "wait") await server.sprint(act.ticks);
       else if (act.type === "set") await server.ok(`setblock ${w(act.at).join(" ")} ${act.block}`, /Changed the block/);
       else if (act.type === "use") await this.#use(server, a, act.at, act.from ?? standingCell(a, act.at), afk);
+      else if (act.type === "drop") {
+        const [x, y, z] = w(act.at);
+        for (let left = act.count; left > 0; left -= 64) {
+          const n = Math.min(64, left);
+          await server.command(`summon item ${x + 0.5} ${y + 0.5} ${z + 0.5} {Item:{id:"${act.item}",count:${n}},Motion:[0.0,0.0,0.0]}`);
+        }
+      }
     }
 
     // 4. Measure
@@ -231,12 +238,30 @@ export class FabricCarpetBackend implements TestBackend {
     let tick = 0;
     let sprintMs = 0;
     await measure(tick);
+    // Feeds spawn their share every few ticks; the remainder carries over
+    const owed = s.feeds.map(() => 0);
+    const feedEvery = Math.min(...s.feeds.map((f) => f.everyTicks ?? 20), s.sampleEveryTicks);
+    const spawn = async (ticks: number) => {
+      for (const [i, f] of s.feeds.entries()) {
+        owed[i]! += (f.perHour * ticks) / 72_000;
+        const n = Math.floor(owed[i]!);
+        owed[i]! -= n;
+        const [x, y, z] = w(f.at);
+        for (let left = n; left > 0; left -= 64) {
+          await server.command(`summon item ${x + 0.5} ${y + 0.5} ${z + 0.5} {Item:{id:"${f.item}",count:${Math.min(64, left)}},Motion:[0.0,0.0,0.0]}`);
+        }
+      }
+    };
     while (tick < s.durationTicks) {
-      const step = Math.min(s.sampleEveryTicks, s.durationTicks - tick);
-      const started = Date.now();
-      const now = await server.sprint(step, this.#opts.log);
-      sprintMs += Date.now() - started;
-      tick = now - t0Game;
+      const sampleAt = Math.min(tick + s.sampleEveryTicks, s.durationTicks);
+      while (tick < sampleAt) {
+        const step = s.feeds.length ? Math.min(feedEvery, sampleAt - tick) : sampleAt - tick;
+        if (s.feeds.length) await spawn(step);
+        const started = Date.now();
+        const now = await server.sprint(step, this.#opts.log);
+        sprintMs += Date.now() - started;
+        tick = now - t0Game;
+      }
       await measure(tick);
     }
 

@@ -139,6 +139,7 @@ export class McTickBackend implements TestBackend {
     const out: string[] = [];
     if (s.measure.player) out.push("mc-tick has no players: items picked up by the AFK player cannot be counted");
     if (s.actions.some((x) => x.type === "set")) out.push('"set" actions are not supported yet');
+    if (s.actions.some((x) => x.type === "drop") || s.feeds.length) out.push("spawning item entities (drop actions, feeds) is not supported");
     if (s.world.terrain === "terrain") out.push("natural terrain is not supported");
     if (typeof s.placement === "object") out.push("mixed strict/with-updates placement is not supported");
     const ids = new Set([...s.assembly.blocks.values()].map((b) => b.block.id));
