@@ -3,7 +3,7 @@
  * Run with: pnpm test:game [name...]
  */
 
-import { B, assembly } from "@redstack/core";
+import { B, type Vec3, assembly } from "@redstack/core";
 import {
   Chest,
   Crafter,
@@ -11,11 +11,14 @@ import {
   FastShulkerLoader,
   HopperLine,
   ItemFilter,
+  PatternCrafter,
+  type Recipe,
   ShulkerLoader,
   ShulkerUnloader,
   SmelterArray,
   SupplyChest,
   filledShulker,
+  patternCrafterFeeds,
 } from "@redstack/stdlib";
 import { type Scenario, scenario } from "@redstack/testing";
 import { cactusFarm, cactusRingFarm } from "./cactus-farm.js";
@@ -286,6 +289,63 @@ export function crafterScenario(): Scenario {
   });
 }
 
+/**
+ * PatternCrafter: pistons from four supply chests (planks, cobblestone, iron,
+ * redstone). Runs until the cobblestone runs out: the crafter must stop
+ * cleanly, and the chest may hold nothing but pistons.
+ */
+export function patternCrafterScenario(resume = false, recipe: Recipe = PatternCrafter.defaults.recipe): Scenario {
+  const supplies: Record<string, Vec3> = { west: [-7, 1, 0], north: [3, 1, -7], east: [7, 1, 0], south: [0, 1, 7] };
+  let feeds: Record<string, string> = {};
+  const r = assembly("pattern-crafter", (f) => {
+    const crafter = f.add(PatternCrafter({ recipe })).at([0, 0, 0]);
+    for (const feed of patternCrafterFeeds(recipe)) {
+      feeds = { ...feeds, [feed.face]: feed.item };
+      f.route(f.add(SupplyChest({ item: feed.item })).at(supplies[feed.face]!).port("out"), crafter.port(feed.face));
+    }
+    crafter.to(Chest);
+  }).resolve();
+  const chest = r.instances.get("Chest#1")!.origin;
+  if (recipe.result === "minecraft:chest") {
+    const wrongPlanks = ["minecraft:oak_button", "minecraft:oak_pressure_plate", "minecraft:stick", "minecraft:crafting_table", "minecraft:oak_slab"];
+    return scenario(r, {
+      name: "pattern-crafter-chest",
+      durationTicks: 12_000,
+      warmupTicks: 1_500,
+      sampleEveryTicks: 500,
+      actions: Object.keys(feeds).map((face) => ({ type: "insert" as const, at: supplies[face]!, item: "minecraft:oak_planks", count: 27 * 64 })),
+      measure: { containers: [chest], items: ["minecraft:chest", ...wrongPlanks] },
+      expectations: [
+        { type: "rate-at-least", item: "minecraft:chest", perHour: 3_200 },
+        ...wrongPlanks.map((item) => ({ type: "rate-at-most" as const, item, perHour: 0 })),
+        { type: "no-ground-items" },
+      ],
+    });
+  }
+  const wrong = ["minecraft:furnace", "minecraft:dispenser", "minecraft:dropper", "minecraft:lever", "minecraft:stone_pressure_plate", "minecraft:oak_slab", "minecraft:cobblestone_slab"];
+  const fill = Object.entries(feeds).map(([face, item]) => ({
+    type: "insert" as const,
+    at: supplies[face]!,
+    item,
+    count: resume && item === "minecraft:cobblestone" ? 600 : 27 * 64,
+  }));
+  // Resume: little cobblestone, run until it is gone, then refill and measure
+  const refill = { ...fill.find((a) => a.item === "minecraft:cobblestone")!, count: 27 * 64 };
+  return scenario(r, {
+    ...(resume ? { name: "pattern-crafter-resume" } : {}),
+    durationTicks: resume ? 9_000 : 18_000,
+    warmupTicks: resume ? 2_000 : 3_000,
+    sampleEveryTicks: 500,
+    actions: resume ? [...fill, { type: "wait", ticks: 12_000 }, refill] : fill,
+    measure: { containers: [chest], items: ["minecraft:piston", ...wrong] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:piston", perHour: 1_500 },
+      ...wrong.map((item) => ({ type: "rate-at-most" as const, item, perHour: 0 })),
+      { type: "no-ground-items" },
+    ],
+  });
+}
+
 /** Survival measurement: 24 cactus columns, 4 in-game hours, 3 runs. */
 function cactusSurvival(design: "row" | "ring", breaker: "fence" | "glass"): Scenario {
   const farm = design === "row" ? cactusFarm(24, breaker) : cactusRingFarm(24, breaker);
@@ -318,6 +378,10 @@ export const scenarios: Record<string, () => Scenario> = {
   "item-filter": itemFilterScenario,
   smelter: smelterScenario,
   "crafter-chest": crafterScenario,
+  "pattern-crafter": () => patternCrafterScenario(),
+  "pattern-crafter-resume": () => patternCrafterScenario(true),
+  "pattern-crafter-chest": () =>
+    patternCrafterScenario(false, { pattern: ["PPP", "P.P", "PPP"], key: { P: "minecraft:oak_planks" }, result: "minecraft:chest" }),
   "kelp-farm": () => kelpFarmScenario(),
   "kelp-farm-mirrored": () => kelpFarmScenario(true),
   "kelp-twin": kelpTwinScenario,

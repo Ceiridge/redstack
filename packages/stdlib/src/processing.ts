@@ -214,3 +214,183 @@ export const Crafter = component(
     void crafter;
   },
 );
+
+type Face = "west" | "north" | "east" | "south";
+const FACES: readonly Face[] = ["west", "north", "east", "south"];
+const CLOCKWISE: Readonly<Record<string, string>> = { north: "east", east: "south", south: "west", west: "north" };
+
+/** Turns a position or direction by `k` quarter turns clockwise (seen from above) around the y axis. */
+function turn(v: Vec3, k: number): Vec3 {
+  let [x, y, z] = v;
+  for (let i = 0; i < k; i++) [x, z] = [-z, x];
+  return [x, y, z];
+}
+function turnDir<D extends string>(d: D, k: number): D {
+  let out: string = d;
+  for (let i = 0; i < k; i++) out = CLOCKWISE[out] ?? out;
+  return out as D;
+}
+
+/** What one face of a PatternCrafter takes. */
+export interface CrafterFeed {
+  readonly face: Face;
+  readonly item: string;
+  /** Items of this kind per craft, shared by all faces that feed it */
+  readonly perCraft: number;
+}
+
+/**
+ * Which item goes into which face of a PatternCrafter: every ingredient gets
+ * a face, the rest go to the ingredients that would otherwise be slowest.
+ */
+export function patternCrafterFeeds(recipe: Recipe, faces = 4): CrafterFeed[] {
+  const need = new Map<string, number>();
+  for (const row of recipe.pattern) for (const ch of row) if (recipe.key[ch]) need.set(recipe.key[ch]!, (need.get(recipe.key[ch]!) ?? 0) + 1);
+  const items = [...need.keys()];
+  if (items.length === 0) throw new Error("PatternCrafter: the recipe has no ingredients.");
+  if (faces < items.length) throw new Error(`PatternCrafter: ${items.length} ingredients need ${items.length} faces, ${faces} given.`);
+  if (faces > 4) throw new Error("PatternCrafter: a crafter has four faces to feed.");
+  const count = new Map(items.map((i) => [i, 1]));
+  for (let f = items.length; f < faces; f++) {
+    const slowest = items.reduce((a, b) => (need.get(b)! / count.get(b)! > need.get(a)! / count.get(a)! ? b : a));
+    count.set(slowest, count.get(slowest)! + 1);
+  }
+  const feeds: CrafterFeed[] = [];
+  let i = 0;
+  for (const item of items) for (let n = 0; n < count.get(item)!; n++) feeds.push({ face: FACES[i++]!, item, perCraft: need.get(item)! / count.get(item)! });
+  return feeds;
+}
+
+/**
+ * Crafter for any recipe – shaped with several ingredients too – that can
+ * never craft the wrong thing, fed from up to four sides.
+ *
+ * The trick is a seed: the grid starts with one item in every slot of the
+ * pattern. A crafter puts an incoming item into the matching slot with the
+ * fewest items, so as long as no slot runs empty the pattern stays exactly
+ * as seeded, whatever order items arrive in. A slot can only run empty if
+ * the crafter fires while it holds one item; so it fires only when every
+ * feeding hopper holds at least 23 items. A hopper fed by a hopper line only
+ * fills up while the crafter behind it is full, so then every slot is full,
+ * and as long as the hoppers stay that full the clock never outruns them.
+ *
+ * Layout: the crafter faces down into a barrel with the output hopper below
+ * (a hopper directly under a crafter pulls its grid empty). The feeding hoppers
+ * sit west, north, east and south (`patternCrafterFeeds` tells which takes
+ * what). A comparator reads each; two dust behind it are the threshold
+ * (signal ≥ 2), a torch inverts it to "not ready", a dust ring under the
+ * torches collects those and locks a repeater between a torch clock and the
+ * dust on top of the crafter's top block. The clock's period follows from
+ * the recipe: the slowest ingredient, at 8 game ticks per item and face.
+ *
+ * Seed: the build places it. Built by hand: put one ingredient into each
+ * pattern slot. Ingredients must stack (no buckets).
+ *
+ * Inputs: one per used face, named after it (into the hopper from outside).
+ * Output: `out`, below the output hopper.
+ *
+ * Measured (Fabric, 26.3): pistons (4 ingredients, one face each) 2,000/h,
+ * the clock's rate; chests from planks on four faces 3,600/h (the old
+ * Crafter: 1,127/h). Nothing but the recipe's result. Out of cobblestone it
+ * stopped with every slot still full and resumed at full rate once refilled.
+ */
+export const PatternCrafter = component(
+  {
+    name: "PatternCrafter",
+    description: "Crafts any recipe (shaped, several ingredients) from up to four fed sides; seeded, never crafts anything else. Inputs: west, north, east, south. Output: out.",
+    status: "game-tested",
+    params: {
+      recipe: {
+        pattern: ["PPP", "CIC", "CRC"],
+        key: { R: "minecraft:redstone", C: "minecraft:cobblestone", I: "minecraft:iron_ingot", P: "minecraft:oak_planks" },
+        result: "minecraft:piston",
+      } as Recipe,
+      /** Faces to feed (1–4); at least one per ingredient */
+      faces: 4,
+    },
+  },
+  (c, { recipe, faces }) => {
+    const feeds = patternCrafterFeeds(recipe, faces);
+    const solid = () => B.of(c.material(M.solid));
+    const dust = (p: Vec3) => {
+      c.block(wire()).at(p);
+      c.block(solid()).at([p[0], p[1] - 1, p[2]]);
+    };
+    const disabled = disabledSlots(recipe);
+    const seed = recipe.pattern.flatMap((row, y) =>
+      [0, 1, 2].flatMap((x) => (recipe.key[row[x] ?? " "] ? [{ slot: y * 3 + x, id: recipe.key[row[x]!]!, count: 1 }] : [])),
+    );
+    c.block(
+      B.of("minecraft:crafter", { orientation: "down_north", triggered: false, crafting: false })
+        .withSlots(seed)
+        .withData(disabled.length ? { disabled_slots: `[I;${disabled.join(",")}]` } : {}),
+    ).at([0, 0, 0]);
+    // The crafter ejects into a barrel: a hopper right below the crafter would pull the grid empty
+    c.block(B.of("minecraft:barrel", { facing: "up", open: false })).at([0, -1, 0]);
+    const out = c.block(B.hopper().outputTo("down")).at([0, -2, 0]);
+
+    // Feeding hoppers and their "not ready" torches, built for the west face and turned
+    feeds.forEach((feed, i) => {
+      const k = FACES.indexOf(feed.face);
+      const at = (v: Vec3) => turn(v, k);
+      const hopper = c.block(B.hopper().outputTo(turnDir("east", k))).at(at([-1, 0, 0]));
+      c.block(B.comparator("compare").signalTowards(turnDir("north", k))).at(at([-1, 0, -1]));
+      c.block(solid()).at(at([-1, -1, -1]));
+      dust(at([-1, 0, -2])); // signal s
+      dust(at([-2, 0, -2])); // s − 1: powers the block only for s ≥ 2
+      c.block(solid()).at(at([-3, 0, -2]));
+      c.block(B.of("minecraft:redstone_wall_torch", { facing: turnDir("west", k), lit: true })).at(at([-4, 0, -2]));
+      c.input(feed.face, hopper, { item: feed.item, description: `${feed.item} (${i + 1} of ${feeds.length} feeds)` });
+    });
+
+    // Ring under the torches: on while any feed is not ready
+    for (let x = -4; x <= 4; x++) for (let z = -4; z <= 4; z++) if (Math.abs(x) === 4 || Math.abs(z) === 4) dust([x, -1, z]);
+    // The ring locks the gate: ring → lock repeater → side of the gate
+    c.block(B.repeater(1).signalTowards("north")).at([-2, -1, -5]);
+    c.block(solid()).at([-2, -2, -5]);
+    c.block(B.repeater(1).signalTowards("east")).at([-2, -1, -6]);
+    c.block(solid()).at([-2, -2, -6]);
+
+    // Torch clock feeding the gate. Half period: torch (2 gt) + loop repeaters
+    const perItem = 8; // game ticks per item and hopper
+    const need = Math.max(...feeds.map((f) => f.perCraft * perItem), (recipe.count ?? 1) * perItem, 12) * 1.1;
+    const loopDelay = Math.max(2, Math.ceil((need - 4) / 4)); // repeater ticks in the loop: period = 4 + 4 × delay game ticks
+    const m = Math.max(1, Math.ceil(loopDelay / 8));
+    const delays = Array.from({ length: 2 * m }, (_, i) => Math.floor(loopDelay / (2 * m)) + (i < loopDelay % (2 * m) ? 1 : 0)) as Array<1 | 2 | 3 | 4>;
+    const period = 4 + 4 * loopDelay;
+    c.block(solid()).at([-4, -1, -6]);
+    c.block(B.of("minecraft:redstone_wall_torch", { facing: "east", lit: true })).at([-3, -1, -6]);
+    for (let i = 0; i < m; i++) {
+      c.block(B.repeater(delays[i]!).signalTowards("north")).at([-3, -1, -7 - i]);
+      c.block(solid()).at([-3, -2, -7 - i]);
+      c.block(B.repeater(delays[m + i]!).signalTowards("south")).at([-4, -1, -7 - i]);
+      c.block(solid()).at([-4, -2, -7 - i]);
+    }
+    dust([-3, -1, -7 - m]);
+    dust([-4, -1, -7 - m]);
+
+    // Gate → up a dust stair → repeaters along x = 0 → dust on the crafter's top block
+    dust([-1, -1, -6]);
+    dust([-1, 0, -7]);
+    dust([-1, 1, -8]);
+    dust([-1, 2, -9]);
+    dust([0, 2, -9]);
+    for (let z = -8; z <= -1; z++) {
+      c.block(B.repeater(1).signalTowards("south")).at([0, 2, z]);
+      c.block(solid()).at([0, 1, z]);
+    }
+    dust([0, 2, 0]);
+
+    c.output("out", out.down, { item: recipe.result });
+    const craftsPerHour = 72_000 / period;
+    c.crafts(
+      feeds.map((f) => ({ from: f.face, item: f.item, perCraft: f.perCraft })),
+      "out",
+      { output: recipe.result, outputPerCraft: recipe.count ?? 1, maxCraftsPerHour: craftsPerHour },
+      "game-mechanic",
+      `clock period ${period} game ticks`,
+    );
+    c.note(`Clock period ${period} game ticks: ${Math.round(craftsPerHour)} crafts/h once every feed is backed up.`);
+    c.note("Starts only after the grid and the feeding hoppers fill up (about 63 items per slot plus 23 per hopper).");
+  },
+);

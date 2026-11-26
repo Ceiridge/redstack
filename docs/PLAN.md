@@ -99,8 +99,8 @@ The router places transport between fixed components. Choosing the positions and
 **Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
 ### Phase 5 – Standard library and AI loop
-- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs. Game-tested so far: HopperLine, Chest, DoubleChest, SupplyChest, CactusRow, KelpBonemealCore, PlayerPickup, ShulkerLoader, FastShulkerLoader, ShulkerUnloader, ItemFilter, SmelterArray, Crafter (single-ingredient and shapeless recipes)
-  - [ ] Crafter for shaped recipes with several ingredients (needs ordered input)
+- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs. Game-tested so far: HopperLine, Chest, DoubleChest, SupplyChest, CactusRow, KelpBonemealCore, PlayerPickup, ShulkerLoader, FastShulkerLoader, ShulkerUnloader, ItemFilter, SmelterArray, Crafter (single-ingredient and shapeless recipes), PatternCrafter (any recipe)
+  - [x] Crafter for shaped recipes with several ingredients: `PatternCrafter` (seeded grid, fires only while all feeds are backed up; pistons 2,000/h, chests 3,600/h, game-tested including running dry and restarting); `crafts` rates in the flow model (the scarcest ingredient sets the pace)
   - [x] Faster shulker loading: `FastShulkerLoader`, two hoppers per box, 18,000/h (game-tested). A TNT cobblestone farm (~208,000/h) needs 12 of them
   - [ ] Water-based collection; a TNT-duper module of our own
   - [ ] Item transport modes beyond hopper chains, each a game-tested gadget with rate, cost and limits:
@@ -108,7 +108,7 @@ The router places transport between fixed components. Choosing the positions and
     - ice (items sliding on packed/blue ice; whether ice under a water stream helps is to be measured)
     - minecarts: chest/hopper minecarts for long distances and batches; a hopper minecart pulls 20 items/s from a container above (Java), unloading stays the bottleneck
     - dropper chains and bubble columns for going up
-  - [ ] Router picks the transport mode per link: search over (position, mode) with mode-specific moves and transition gadgets (stream → collector), cost from materials, space and entity lag, constraint capacity ≥ flow from the flow model. Exact per link, heuristic across links (Steiner-like, NP-hard in general)
+  - [ ] Transport mode per route, chosen by the coder (`via`); the router lays it out within that mode's rules (water only level or downhill, a source every ≤ 8 blocks, transition gadgets such as stream → collector), and the flow model checks capacity ≥ flow. Picking the mode automatically stays an optional later step
   - donut.build: its terms forbid scraping and its download endpoint blocks bots, so schematics are downloaded by hand and analysed with `redstack inspect` / `schematicComponent`; originals are not committed
 - [ ] Component docs written for AIs too: ports, rates, limits, known traps
 - [ ] Loop: write → stage 0 → stage 1 → test → repair
@@ -136,6 +136,6 @@ The router places transport between fixed components. Choosing the positions and
 
 ## Next steps
 1. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and the optimizer is only as good as its prices
-2. A crafter for multi-ingredient shaped recipes
+2. Item transport: a water-stream collector (fences or a side pocket for the new source every 8 blocks), then transport modes the coder picks per route (`route(…, { via: "water" })`)
 3. Mirrored variants as options in the layout search (`free({ mirror: true })`)
 4. Water-based collection and transport modes in the router, our own TNT-duper module
