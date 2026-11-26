@@ -88,6 +88,22 @@ export const CactusRow = component({ name: "CactusRow", params: { cells: 8 } }, 
 
 **Transport is solved, not drawn.** `route(from, to)` lays the shortest hopper chain between two ports, `collect([...], to)` merges several outputs into one input with a shared hopper tree, `distribute(from, [...])` feeds several inputs through branches. The router knows the hopper rules: hoppers never carry items up, never sit under a foreign container (they would drain it) or above a foreign hopper, never where another hopper or dropper pushes in, never next to steady redstone power, and never in space a component keeps clear. Impossible routes are reported with the reason ("hoppers cannot move items up …"). The generated hoppers are a component with a rate like any other, so the flow model sees them – one hopper moves 9,000 items/h, and a supply line that starves a machine shows up as a bottleneck.
 
+**Layout is searched, not drawn either.** Mark children `free()` and the layout search picks their positions and rotations: nothing may overlap or sit in kept-clear space, connected ports must touch, routes must be possible – and the bounding box and the hopper count are minimised (weights adjustable). It is a branch-and-bound search that calls the router for every candidate, followed by improvement moves; it says whether the result is proven optimal or the best within its budget. For two kelp cores and four supply chests it finds the layout below in about a second: both cores face one AFK player, every chest sits right above the single hopper its dispenser needs (4 hoppers – the minimum), measured at **34,500 kelp/h** for one player.
+
+<p align="center">
+  <img src="docs/images/kelp-twin-3d.png" alt="3D render of two kelp cores facing each other across a gap where the AFK player stands, each with supply chests on its sides above single hoppers." width="560">
+</p>
+
+```ts
+const a = f.add(KelpBonemealCore).at([0, 0, 0]);
+const b = f.add(KelpBonemealCore).free({ within: ground });          // where and which way: up to the search
+const player = f.add(PlayerPickup).free({ rotations: [0] });
+f.connect(a.port("kelp"), player.port("in"));
+f.connect(b.port("kelp"), player.port("in"));
+for (const core of [a, b]) for (const side of ["West", "East"])
+  f.route(f.add(SupplyChest, supply).free({ rotations: [0] }).port("out"), core.port(`bonemeal${side}`));
+```
+
 **Materials, not hard-coded blocks.** Components ask for a slot such as "any fence" (`#minecraft:fences`) or "any plain solid block" (`#redstack:solid`) with a default. Build with what you have: `assembly(name, build, { materials: { cactusBreaker: "minecraft:spruce_fence" } })` – the checks verify the choice against Minecraft's block tags.
 
 **Environments.** Rates depend on the game version and server settings (random tick speed, Spigot/Paper hopper and growth settings, simulation distance). Presets: `vanilla`, `paperDefaults`, `donutGuess` – guesses are labelled as such. Test backends refuse environments they cannot reproduce instead of measuring the wrong thing.
@@ -168,6 +184,7 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | `Chest`, `SupplyChest` | game-tested | storage and test fixture in every scenario |
 | `KelpBonemealCore` | game-tested | 18,000 bone meal/h → ≈ 16,800 kelp/h, model matches |
 | `PlayerPickup` | game-tested | the AFK player as an item sink, counted in tests |
+| `free()` + layout search | game-tested | two kelp cores and four chests placed by the search: 34,500 kelp/h measured, model 33,500 |
 | `route` / `collect` / `distribute` | game-tested | three chests merged past a wall and a decoy chest: 9,000/h = model, nothing drained from the decoy |
 
 *game-tested* = passes on the Fabric test server with Minecraft 26.3; not yet confirmed on a production server.
@@ -176,7 +193,7 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 
 | Package | Purpose |
 |---|---|
-| [`core`](packages/core) | components, ports, assemblies, materials, environments, hopper router, static checks – no dependencies |
+| [`core`](packages/core) | components, ports, assemblies, materials, environments, hopper router, layout search, static checks – no dependencies |
 | [`flow`](packages/flow) | flow model |
 | [`stdlib`](packages/stdlib) | components and environment presets |
 | [`nucleation`](packages/nucleation) | adapter for [Nucleation](https://github.com/Schem-at/Nucleation): schematic I/O, block registry, 3D meshes |

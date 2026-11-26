@@ -14,6 +14,7 @@ import { type RenderOptions, toHtml, toSvg, toVizModel } from "@redstack/viz";
 import { cactusFarm } from "./cactus-farm.js";
 import debuggerDemo from "./debugger-demo.js";
 import { kelpFarm } from "./kelp-farm.js";
+import { kelpTwin } from "./kelp-twin.js";
 
 function model(assembly: Assembly) {
   const resolved = assembly.resolve();
@@ -37,5 +38,7 @@ if (existsSync(defaultResourcePackPath())) {
   writeFileSync("out/figure-3d.html", toHtml(m, { glb: meshGlb(resolved) }));
   const kelp = model(kelpFarm(2));
   writeFileSync("out/kelp-farm-3d.html", toHtml(kelp.model, { glb: meshGlb(kelp.resolved) }));
-  console.log("out/figure-3d.html, out/kelp-farm-3d.html (run scripts/figures.sh for the PNGs)");
+  const twin = model(kelpTwin());
+  writeFileSync("out/kelp-twin-3d.html", toHtml(twin.model, { glb: meshGlb(twin.resolved) }));
+  console.log("out/figure-3d.html, out/kelp-farm-3d.html, out/kelp-twin-3d.html (run scripts/figures.sh for the PNGs)");
 }

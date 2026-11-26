@@ -8,6 +8,7 @@ import { Chest, HopperLine, SupplyChest } from "@redstack/stdlib";
 import { type Scenario, scenario } from "@redstack/testing";
 import { cactusFarm, cactusRingFarm } from "./cactus-farm.js";
 import { kelpFarm } from "./kelp-farm.js";
+import { kelpTwin } from "./kelp-twin.js";
 
 const CROPS = ["items", "block-updates", "random-ticks", "fake-player"] as const;
 
@@ -87,6 +88,37 @@ export function kelpFarmScenario(): Scenario {
   });
 }
 
+/**
+ * Two kelp cores and their supply chests placed by the layout search, one
+ * player for both. Levers and chests are found in the solved layout.
+ */
+export function kelpTwinScenario(): Scenario {
+  const r = kelpTwin().resolve();
+  const blocks = [...r.blocks.values()];
+  const of = (id: string) => blocks.filter((b) => b.block.id === id).map((b) => b.pos);
+  const player = r.instances.get("PlayerPickup#1")!.origin;
+  return scenario(r, {
+    requires: ["items", "block-updates", "redstone", "fake-player"],
+    world: { terrain: "flat", groundY: 0, afkSpot: player },
+    durationTicks: 6_000,
+    warmupTicks: 400,
+    sampleEveryTicks: 600,
+    placement: "strict",
+    actions: [
+      ...[...r.instances.values()]
+        .filter((i) => i.template.typeName === "SupplyChest")
+        .map((i) => ({ type: "insert" as const, at: i.origin, item: "minecraft:bone_meal", count: 27 * 64 })),
+      ...of("minecraft:lever").map((at) => ({ type: "use" as const, at })),
+    ],
+    measure: {
+      player: true,
+      containers: [...of("minecraft:chest"), ...of("minecraft:hopper"), ...of("minecraft:dispenser")],
+      items: ["minecraft:kelp", "minecraft:bone_meal"],
+    },
+    expectations: [{ type: "matches-flow-model", tolerance: 0.1 }],
+  });
+}
+
 /** Survival measurement: 24 cactus columns, 4 in-game hours, 3 runs. */
 function cactusSurvival(design: "row" | "ring", breaker: "fence" | "glass"): Scenario {
   const farm = design === "row" ? cactusFarm(24, breaker) : cactusRingFarm(24, breaker);
@@ -114,6 +146,7 @@ export const scenarios: Record<string, () => Scenario> = {
   "hopper-line-throughput": hopperLineThroughput,
   "hopper-collector": hopperCollector,
   "kelp-farm": kelpFarmScenario,
+  "kelp-twin": kelpTwinScenario,
   "cactus-row-fence": () => cactusSurvival("row", "fence"),
   "cactus-row-glass": () => cactusSurvival("row", "glass"),
   "cactus-ring-fence": () => cactusSurvival("ring", "fence"),

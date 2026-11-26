@@ -29,7 +29,8 @@ import {
   sub,
 } from "./geometry.js";
 import type { MaterialChoices, MaterialSlot } from "./materials.js";
-import { type RouteResult, type RoutingWorld, hopperSplit, hopperTarget, hopperTree, poweredCells, routeHoppers } from "./routing.js";
+import { type FreeItem, type LayoutEnd, type LayoutLink, solveLayout } from "./layout.js";
+import { type HopperCell, type RouteResult, type RoutingWorld, hopperSplit, hopperTarget, hopperTree, poweredCells, routeHoppers } from "./routing.js";
 
 // ---------- Ports and rates ----------
 
@@ -308,11 +309,22 @@ export interface PortRef {
   readonly port: string;
 }
 
-type Placement =
+type PlacementSpec =
   | { kind: "none" }
   | { kind: "at"; pos: Vec3 }
   | { kind: "offset"; from: Instance; offset: Vec3 }
-  | { kind: "attach"; myPort: string; target: PortRef; cellIndex: number };
+  | { kind: "attach"; myPort: string; target: PortRef; cellIndex: number }
+  | { kind: "free"; rotations?: readonly number[]; within?: { readonly min: Vec3; readonly max: Vec3 } };
+
+type ChildPlacement = { readonly origin: Vec3; readonly rotation: Rotation };
+
+/** Options for placing an instance by the layout search. */
+export interface FreeOptions {
+  /** Allowed quarter turns (default all four) */
+  readonly rotations?: readonly number[];
+  /** Box for the instance's origin (default: around the fixed parts) */
+  readonly within?: { readonly min: Vec3; readonly max: Vec3 };
+}
 
 export interface DockOptions {
   /** Output port of this instance (default: its only output of a matching kind) */
@@ -328,13 +340,23 @@ export class Instance {
   readonly id: string;
   readonly template: ComponentTemplate;
   readonly #parent: ComponentBuilder;
-  /** @internal */ _placement: Placement = { kind: "none" };
+  /** @internal */ _placement: PlacementSpec = { kind: "none" };
   /** @internal */ _rotation: Rotation | undefined;
 
   constructor(parent: ComponentBuilder, id: string, template: ComponentTemplate) {
     this.#parent = parent;
     this.id = id;
     this.template = template;
+  }
+
+  /**
+   * Leaves position and rotation to the layout search (see ComponentBuilder.layout):
+   * it finds a place where nothing overlaps, connections touch and routes fit,
+   * as compactly as it can.
+   */
+  free(opts: FreeOptions = {}): this {
+    this._placement = { kind: "free", ...(opts.rotations ? { rotations: opts.rotations } : {}), ...(opts.within ? { within: opts.within } : {}) };
+    return this;
   }
 
   at(pos: Vec3): this {
@@ -430,6 +452,53 @@ interface RouteRequest {
   readonly opts: RouteOptions;
 }
 
+/** All blocks and reserved cells of a template and its children, turned by `rotation`, relative to its origin. */
+export function templateShape(t: ComponentTemplate, rotation: Rotation): TemplateShape {
+  const cached = SHAPES.get(t)?.[rotation];
+  if (cached) return cached;
+  const blocks: Array<{ pos: Vec3; block: BlockSpec }> = [];
+  const clear: Vec3[] = [];
+  const visit = (tt: ComponentTemplate, origin: Vec3, rot: Rotation) => {
+    const toFrame = (v: Vec3) => add(origin, rotateVec(v, rot));
+    for (const b of tt.blocks) blocks.push({ pos: toFrame(b.pos), block: rotateBlock(b.block, rot) });
+    for (const c of tt.clear) clear.push(toFrame(c));
+    for (const c of tt.children) visit(c.template, toFrame(c.origin), normalizeRotation(rot + c.rotation));
+  };
+  visit(t, [0, 0, 0], rotation);
+  const shape = { blocks, clear };
+  const perRotation = SHAPES.get(t) ?? [];
+  perRotation[rotation] = shape;
+  SHAPES.set(t, perRotation);
+  return shape;
+}
+
+type TemplateShape = { readonly blocks: ReadonlyArray<{ readonly pos: Vec3; readonly block: BlockSpec }>; readonly clear: readonly Vec3[] };
+/** Templates are immutable, so their flattened shapes can be cached. */
+const SHAPES = new WeakMap<ComponentTemplate, TemplateShape[]>();
+
+const ROUTE_LABELS = { route: "HopperRoute", collect: "HopperCollector", distribute: "HopperSplitter" } as const;
+
+interface RoutedRequest {
+  readonly req: RouteRequest;
+  readonly label: string;
+  readonly hoppers?: readonly HopperCell[];
+  readonly starts?: readonly Vec3[];
+  readonly error?: string;
+  readonly unplaced?: boolean;
+  readonly at?: Vec3;
+}
+
+export interface LayoutOptions {
+  /** Objective weights: cost = volume × bounding-box volume + hoppers × routed hoppers (defaults 1 and 5) */
+  readonly weights?: { readonly volume?: number; readonly hoppers?: number };
+  /** Default box for free instances' origins */
+  readonly within?: { readonly min: Vec3; readonly max: Vec3 };
+  /** How far a routed free instance may be from its partner, per axis (default 4) */
+  readonly routeRadius?: number;
+  /** Search budget in nodes (default 5,000) */
+  readonly maxNodes?: number;
+}
+
 export class ComponentBuilder {
   readonly name: string;
   readonly ctx: BuildContext;
@@ -446,6 +515,8 @@ export class ComponentBuilder {
   readonly #materials: MaterialUse[] = [];
   readonly #counters = new Map<string, number>();
   readonly #routes: RouteRequest[] = [];
+  #layoutOpts: LayoutOptions = {};
+  readonly #freePlaced = new Map<string, ChildPlacement>();
 
   constructor(name: string, ctx: BuildContext = DEFAULT_CONTEXT) {
     this.name = name;
@@ -578,6 +649,14 @@ export class ComponentBuilder {
   // ----- solved layout -----
 
   /**
+   * Settings for the layout search that places instances marked `free()`.
+   * The search runs when the component is finished, before the router.
+   */
+  layout(opts: LayoutOptions): void {
+    this.#layoutOpts = opts;
+  }
+
+  /**
    * Connects an output to an input with hoppers that the router places and
    * orients: the shortest chain through free space that does not drain or
    * feed anything else. Solved when the component is finished, after all
@@ -678,7 +757,21 @@ export class ComponentBuilder {
     }
 
     const diagnostics: Diagnostic[] = [];
-    const placed = this.#placeChildren(diagnostics);
+    let placed = this.#placeChildren();
+    if (this.#children.some((c) => c._placement.kind === "free")) {
+      this.#solveLayout(placed, diagnostics);
+      placed = this.#placeChildren();
+    }
+    for (const inst of this.#children) {
+      if (!placed.has(inst.id) && !(inst._placement.kind === "free" && diagnostics.some((d) => d.code === "layout-failed"))) {
+        diagnostics.push({
+          severity: "error",
+          code: "unplaced",
+          message: `${inst.id} could not be placed (no anchor or circular dependency).`,
+          instances: [inst.id],
+        });
+      }
+    }
     const children: ChildTemplate[] = [];
     for (const inst of this.#children) {
       const p = placed.get(inst.id);
@@ -729,70 +822,84 @@ export class ComponentBuilder {
     };
   }
 
-  /** Runs the router for every route/collect request, in order. */
-  #solveRoutes(
-    children: readonly ChildTemplate[],
-    diagnostics: Diagnostic[],
-  ): { children: ChildTemplate[]; connections: Array<{ from: PortEndpoint; to: PortEndpoint }> } {
-    const out = { children: [] as ChildTemplate[], connections: [] as Array<{ from: PortEndpoint; to: PortEndpoint }> };
-    if (this.#routes.length === 0) return out;
-
-    // Everything in this frame: own blocks, children's blocks (recursively), clear cells
+  /** Everything in this frame for the given children: own blocks, children's blocks (recursively), clear cells. */
+  #occupancy(children: readonly ChildTemplate[]): { blocks: Map<string, { pos: Vec3; block: BlockSpec }>; clear: Set<string> } {
     const blocks = new Map<string, { pos: Vec3; block: BlockSpec }>();
     const clear = new Set<string>();
-    const addTemplate = (t: ComponentTemplate, origin: Vec3, rot: Rotation) => {
-      const toFrame = (v: Vec3) => add(origin, rotateVec(v, rot));
-      for (const b of t.blocks) {
-        const pos = toFrame(b.pos);
-        blocks.set(key(pos), { pos, block: rotateBlock(b.block, rot) });
-      }
-      for (const c of t.clear) clear.add(key(toFrame(c)));
-      for (const c of t.children) addTemplate(c.template, toFrame(c.origin), normalizeRotation(rot + c.rotation));
-    };
     for (const p of this.#placed) blocks.set(key(p.pos), { pos: p.pos, block: p.block });
     for (const c of this.#clear.values()) clear.add(key(c));
-    for (const c of children) addTemplate(c.template, c.origin, c.rotation);
-
-    const portCells = (ref: PortRef, direction: PortDirection): readonly Vec3[] | undefined => {
-      if (!ref.instance) {
-        const def = this.#ports.get(ref.port);
-        if (def && def.direction !== direction) throw new Error(`${this.name}: route ${direction === "in" ? "target" : "source"} "${ref.port}" is an ${def.direction}put.`);
-        return def?.cells;
+    for (const c of children) {
+      const shape = templateShape(c.template, c.rotation);
+      for (const b of shape.blocks) {
+        const pos = add(c.origin, b.pos);
+        blocks.set(key(pos), { pos, block: b.block });
       }
-      const child = children.find((c) => c.id === ref.instance!.id);
-      const def = ref.instance.template.portView.get(ref.port);
-      if (!child || !def) return undefined;
-      if (def.direction !== direction) throw new Error(`${this.name}: route ${direction === "in" ? "target" : "source"} ${ref.instance.id}.${ref.port} is an ${def.direction}put.`);
-      return def.cells.map((v) => add(child.origin, rotateVec(v, child.rotation)));
+      for (const cl of shape.clear) clear.add(key(add(c.origin, cl)));
+    }
+    return { blocks, clear };
+  }
+
+  /** Port cells in this frame, for an own port or a placed child's port. */
+  #portCells(children: readonly ChildTemplate[], ref: PortRef, direction?: PortDirection): readonly Vec3[] | undefined {
+    const what = (d: PortDirection) => (d === "in" ? "target" : "source");
+    if (!ref.instance) {
+      const def = this.#ports.get(ref.port);
+      if (def && direction && def.direction !== direction) throw new Error(`${this.name}: route ${what(direction)} "${ref.port}" is an ${def.direction}put.`);
+      return def?.cells;
+    }
+    const child = children.find((c) => c.id === ref.instance!.id);
+    const def = ref.instance.template.portView.get(ref.port);
+    if (!child || !def) return undefined;
+    if (direction && def.direction !== direction) {
+      throw new Error(`${this.name}: route ${what(direction)} ${ref.instance.id}.${ref.port} is an ${def.direction}put.`);
+    }
+    return def.cells.map((v) => add(child.origin, rotateVec(v, child.rotation)));
+  }
+
+  /**
+   * Runs the router for every route request, in order, against the given
+   * placement of the children. No side effects, so the layout search can call
+   * it for every candidate layout.
+   */
+  #routeAll(children: readonly ChildTemplate[]): RoutedRequest[] {
+    const results: RoutedRequest[] = [];
+    if (this.#routes.length === 0) return results;
+    const { blocks, clear } = this.#occupancy(children);
+    // Routed hoppers give off no power, so this holds for all requests
+    const powered = poweredCells(blocks.values());
+    const pushTargetOf = (b: { pos: Vec3; block: BlockSpec } | undefined): Vec3 | undefined => {
+      if (!b || !["minecraft:hopper", "minecraft:dropper", "minecraft:dispenser"].includes(b.block.id)) return undefined;
+      const f = b.block.props["facing"];
+      return typeof f === "string" && f in DIR_VECTORS ? add(b.pos, DIR_VECTORS[f as Dir]) : undefined;
     };
-    const cellsOf = (end: RouteEnd, direction: PortDirection) => (Array.isArray(end) ? [end as Vec3] : portCells(end as PortRef, direction));
-    const endpointOf = (end: RouteEnd): PortEndpoint | undefined =>
-      Array.isArray(end) ? undefined : (end as PortRef).instance ? { child: (end as PortRef).instance!.id, port: (end as PortRef).port } : { port: (end as PortRef).port };
+    const pushers = new Map<string, Vec3[]>();
+    const addPusher = (b: { pos: Vec3; block: BlockSpec }) => {
+      const t = pushTargetOf(b);
+      if (t) pushers.set(key(t), [...(pushers.get(key(t)) ?? []), b.pos]);
+    };
+    for (const b of blocks.values()) addPusher(b);
+    const cellsOf = (end: RouteEnd, direction: PortDirection) => (Array.isArray(end) ? [end as Vec3] : this.#portCells(children, end as PortRef, direction));
 
     for (const req of this.#routes) {
       const starts = req.from.map((f) => cellsOf(f, "out")?.[0]);
       const targetSets = req.to.map((t) => cellsOf(t, "in"));
-      const label = { route: "HopperRoute", collect: "HopperCollector", distribute: "HopperSplitter" }[req.kind];
+      const label = ROUTE_LABELS[req.kind];
       if (starts.some((x) => !x) || targetSets.some((t) => !t?.length)) {
-        diagnostics.push({ severity: "error", code: "route-failed", message: `${label}: an end is not placed (unplaced child?).` });
+        results.push({ req, label, unplaced: true, error: `${label}: an end is not placed (unplaced child?).` });
         continue;
       }
       const targets = targetSets.flatMap((t) => t!);
-      const all = [...blocks.values()].map((b) => b.pos).concat(starts as Vec3[], targets);
+      // Search box: the route's ends plus a margin for detours
       const m = req.opts.margin ?? 4;
-      const min: Vec3 = [0, 1, 2].map((i) => Math.min(...all.map((p) => p[i]!)) - m) as unknown as Vec3;
-      const max: Vec3 = [0, 1, 2].map((i) => Math.max(...all.map((p) => p[i]!)) + m) as unknown as Vec3;
-      const powered = poweredCells(blocks.values());
+      const ends = [...(starts as Vec3[]), ...targets];
+      const min: Vec3 = [0, 1, 2].map((i) => Math.min(...ends.map((p) => p[i]!)) - m) as unknown as Vec3;
+      const max: Vec3 = [0, 1, 2].map((i) => Math.max(...ends.map((p) => p[i]!)) + m) as unknown as Vec3;
       const world: RoutingWorld = {
         occupied: (p) => blocks.has(key(p)) || clear.has(key(p)),
         powered: (p) => powered.has(key(p)),
         blockAt: (p) => blocks.get(key(p))?.block.id,
-        pushTarget: (p) => {
-          const b = blocks.get(key(p))?.block;
-          if (!b || !["minecraft:hopper", "minecraft:dropper", "minecraft:dispenser"].includes(b.id)) return undefined;
-          const f = b.props["facing"];
-          return typeof f === "string" && f in DIR_VECTORS ? add(p, DIR_VECTORS[f as Dir]) : undefined;
-        },
+        pushTarget: (p) => pushTargetOf(blocks.get(key(p))),
+        pushersInto: (p) => pushers.get(key(p)) ?? [],
         min,
         max,
       };
@@ -810,17 +917,40 @@ export class ComponentBuilder {
         }
       }
       if (!best?.ok) {
-        diagnostics.push({ severity: "error", code: "route-failed", message: `${label}: ${best?.message ?? "no route"}`, at: starts[0]! });
+        results.push({ req, label, error: `${label}: ${best?.message ?? "no route"}`, at: starts[0]! });
         continue;
       }
+      // Later routes see this one as foreign hoppers
+      for (const h of best.hoppers) {
+        const b = { pos: h.pos, block: makeBlock("hopper", { facing: h.facing, enabled: true }) };
+        blocks.set(key(h.pos), b);
+        addPusher(b);
+      }
+      results.push({ req, label, hoppers: best.hoppers, starts: starts as Vec3[] });
+    }
+    return results;
+  }
 
+  /** Turns the routed requests into generated child components and their connections. */
+  #solveRoutes(
+    children: readonly ChildTemplate[],
+    diagnostics: Diagnostic[],
+  ): { children: ChildTemplate[]; connections: Array<{ from: PortEndpoint; to: PortEndpoint }> } {
+    const out = { children: [] as ChildTemplate[], connections: [] as Array<{ from: PortEndpoint; to: PortEndpoint }> };
+    const endpointOf = (end: RouteEnd): PortEndpoint | undefined =>
+      Array.isArray(end) ? undefined : (end as PortRef).instance ? { child: (end as PortRef).instance!.id, port: (end as PortRef).port } : { port: (end as PortRef).port };
+    for (const r of this.#routeAll(children)) {
+      const { req, label } = r;
+      if (!r.hoppers || !r.starts) {
+        diagnostics.push({ severity: "error", code: "route-failed", message: r.error ?? `${label}: no route`, ...(r.at ? { at: r.at } : {}) });
+        continue;
+      }
       const n = (this.#counters.get(label) ?? 0) + 1;
       this.#counters.set(label, n);
       const id = req.opts.id ?? `${label}#${n}`;
-      const hoppers = best.hoppers;
-      for (const h of hoppers) blocks.set(key(h.pos), { pos: h.pos, block: makeBlock("hopper", { facing: h.facing, enabled: true }) });
+      const hoppers = r.hoppers;
       const exits = hoppers.map(hopperTarget).filter((t) => !hoppers.some((h) => key(h.pos) === key(t)));
-      const inPort: PortDef = { name: "in", direction: "in", kind: "items", cells: starts as Vec3[], description: "routed hoppers" };
+      const inPort: PortDef = { name: "in", direction: "in", kind: "items", cells: r.starts, description: "routed hoppers" };
       const outPort: PortDef = { name: "out", direction: "out", kind: "items", cells: exits };
       const ports = new Map([
         ["in", inPort],
@@ -841,7 +971,9 @@ export class ComponentBuilder {
           portView: ports,
           children: [],
           connections: [],
-          rates: [{ type: "passes", from: "in", to: "out", maxPerHour: hopperItemsPerHour(this.ctx.env), basis: "game-mechanic", note: "solved hopper route; as fast as one hopper" }],
+          rates: [
+            { type: "passes", from: "in", to: "out", maxPerHour: hopperItemsPerHour(this.ctx.env), basis: "game-mechanic", note: "solved hopper route; as fast as one hopper" },
+          ],
           materials: [],
           notes: [`${hoppers.length} hopper(s) placed by the router`],
           diagnostics: [],
@@ -859,7 +991,100 @@ export class ComponentBuilder {
     return out;
   }
 
-  #placeChildren(diagnostics: Diagnostic[]): Map<string, { origin: Vec3; rotation: Rotation }> {
+  /**
+   * Places the free children with the layout search: no overlaps, reserved
+   * space kept, connected ports touching, routes possible – and as compact and
+   * hopper-cheap as the search finds within its budget.
+   */
+  #solveLayout(fixed: ReadonlyMap<string, { origin: Vec3; rotation: Rotation }>, diagnostics: Diagnostic[]): void {
+    const free = this.#children.filter((c) => c._placement.kind === "free");
+    if (free.length === 0) return;
+    const placedChildren = (extra: ReadonlyMap<string, ChildPlacement>): ChildTemplate[] =>
+      this.#children.flatMap((inst) => {
+        const p = fixed.get(inst.id) ?? extra.get(inst.id);
+        return p ? [{ id: inst.id, template: inst.template, origin: p.origin, rotation: p.rotation }] : [];
+      });
+    const base = this.#occupancy(placedChildren(new Map()));
+
+    const allFixed = [...base.blocks.values()].map((b) => b.pos);
+    const lo = [0, 1, 2].map((i) => Math.min(0, ...allFixed.map((p) => p[i]!)));
+    const hi = [0, 1, 2].map((i) => Math.max(0, ...allFixed.map((p) => p[i]!)));
+    const span = free.reduce((n, inst) => {
+      const s = templateShape(inst.template, 0).blocks.map((b) => b.pos);
+      return n + Math.max(1, ...[0, 1, 2].map((i) => Math.max(...s.map((p) => p[i]!)) - Math.min(...s.map((p) => p[i]!)) + 1));
+    }, 0);
+    const items: FreeItem[] = free.map((inst) => {
+      const pl = inst._placement as Extract<PlacementSpec, { kind: "free" }>;
+      const options = (pl.rotations ?? [0, 1, 2, 3]).map((r) => {
+        const rotation = normalizeRotation(r);
+        const shape = templateShape(inst.template, rotation);
+        const ports = new Map<string, Vec3[]>();
+        for (const [name, def] of inst.template.portView) ports.set(name, def.cells.map((v) => rotateVec(v, rotation)));
+        return { rotation, shape: { blocks: shape.blocks.map((b) => b.pos), clear: shape.clear, ports } };
+      });
+      const within = pl.within ?? this.#layoutOpts.within;
+      return {
+        id: inst.id,
+        options,
+        min: within?.min ?? [lo[0]! - span, lo[1]! - span, lo[2]! - span],
+        max: within?.max ?? [hi[0]! + span, hi[1]! + span, hi[2]! + span],
+      };
+    });
+
+    // Links: connections and routes that involve a free child
+    const isFree = (r: PortRef) => !!r.instance && r.instance._placement.kind === "free";
+    const fixedChildren = placedChildren(new Map());
+    const end = (r: RouteEnd): LayoutEnd | undefined => {
+      if (Array.isArray(r)) return { cells: [r as Vec3] };
+      const ref = r as PortRef;
+      if (isFree(ref)) return { item: ref.instance!.id, port: ref.port };
+      const cells = this.#portCells(fixedChildren, ref);
+      return cells ? { cells } : undefined;
+    };
+    const links: LayoutLink[] = [];
+    const link = (kind: LayoutLink["kind"], a: RouteEnd, b: RouteEnd) => {
+      const from = end(a);
+      const to = end(b);
+      if (from && to && ("item" in from || "item" in to)) links.push({ kind, from, to });
+    };
+    for (const c of this.#connections) link("touch", c.from, c.to);
+    for (const r of this.#routes) for (const f of r.from) for (const t of r.to) link("route", f, t);
+
+    const sol = solveLayout({
+      fixedBlocks: allFixed,
+      fixedClear: [...base.clear].map((k) => k.split(",").map(Number) as unknown as Vec3),
+      items,
+      links,
+      ...(this.#layoutOpts.weights ? { weights: this.#layoutOpts.weights } : {}),
+      ...(this.#layoutOpts.routeRadius !== undefined ? { routeRadius: this.#layoutOpts.routeRadius } : {}),
+      ...(this.#layoutOpts.maxNodes !== undefined ? { maxNodes: this.#layoutOpts.maxNodes } : {}),
+      evaluate: (placements) => {
+        const routed = this.#routeAll(placedChildren(placements)).filter((r) => !r.unplaced);
+        if (routed.some((r) => !r.hoppers)) return undefined;
+        const hoppers = routed.flatMap((r) => r.hoppers!);
+        return { hoppers: hoppers.length, cells: hoppers.map((h) => h.pos) };
+      },
+    });
+    if (!sol.placements) {
+      const names = free.map((f) => f.id).join(", ");
+      diagnostics.push({
+        severity: "error",
+        code: "layout-failed",
+        message: sol.impossible
+          ? `No layout exists for ${names}: every candidate overlaps, misses a connection or cannot be routed.`
+          : `No layout found for ${names} within ${sol.nodes} search nodes; raise maxNodes or narrow the boxes (within).`,
+      });
+      return;
+    }
+    for (const [id, p] of sol.placements) this.#freePlaced.set(id, p);
+    diagnostics.push({
+      severity: "info",
+      code: "layout",
+      message: `Layout: ${free.length} component(s) placed, volume ${sol.volume}, ${sol.hoppers} routed hopper(s), ${sol.nodes} search nodes – ${sol.optimal ? "optimal for the objective" : "best found within the search budget, not proven optimal"}.`,
+    });
+  }
+
+  #placeChildren(): Map<string, { origin: Vec3; rotation: Rotation }> {
     const placed = new Map<string, { origin: Vec3; rotation: Rotation }>();
     if (this.#children.length > 0 && this.#children.every((c) => c._placement.kind !== "at")) {
       const first = this.#children.find((c) => c._placement.kind === "none");
@@ -879,16 +1104,6 @@ export class ComponentBuilder {
         }
       }
     }
-    for (const inst of this.#children) {
-      if (!placed.has(inst.id)) {
-        diagnostics.push({
-          severity: "error",
-          code: "unplaced",
-          message: `${inst.id} could not be placed (no anchor or circular dependency).`,
-          instances: [inst.id],
-        });
-      }
-    }
     return placed;
   }
 
@@ -901,6 +1116,8 @@ export class ComponentBuilder {
     switch (pl.kind) {
       case "none":
         return undefined;
+      case "free":
+        return this.#freePlaced.get(inst.id);
       case "at":
         return { origin: pl.pos, rotation: inst._rotation ?? 0 };
       case "offset": {

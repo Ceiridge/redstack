@@ -8,4 +8,5 @@ export * from "./assembly.js";
 export * from "./diagnostics.js";
 export * from "./checks.js";
 export * from "./routing.js";
+export * from "./layout.js";
 export * from "./export.js";

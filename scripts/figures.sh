@@ -9,4 +9,7 @@ chrome=$(command -v google-chrome || command -v chromium || command -v chromium-
 "$chrome" --headless=new --no-sandbox --use-angle=swiftshader --enable-unsafe-swiftshader --hide-scrollbars \
   --window-size=1000,700 --virtual-time-budget=15000 \
   --screenshot="$PWD/docs/images/kelp-farm-3d.png" "file://$PWD/out/kelp-farm-3d.html#figure"
-echo docs/images/cactus-farm-3d.png docs/images/kelp-farm-3d.png
+"$chrome" --headless=new --no-sandbox --use-angle=swiftshader --enable-unsafe-swiftshader --hide-scrollbars \
+  --window-size=1000,700 --virtual-time-budget=15000 \
+  --screenshot="$PWD/docs/images/kelp-twin-3d.png" "file://$PWD/out/kelp-twin-3d.html#figure"
+echo docs/images/cactus-farm-3d.png docs/images/kelp-farm-3d.png docs/images/kelp-twin-3d.png

@@ -56,6 +56,8 @@ export interface RoutingWorld {
   readonly blockAt: (p: Vec3) => string | undefined;
   /** For hoppers, droppers and dispensers: the cell they push into */
   readonly pushTarget: (p: Vec3) => Vec3 | undefined;
+  /** Optional fast path: the cells whose hopper/dropper pushes into `p` (the inverse of pushTarget) */
+  readonly pushersInto?: (p: Vec3) => readonly Vec3[];
   /** Cells where a hopper would receive redstone power (and stop working) */
   readonly powered?: (p: Vec3) => boolean;
   /** Search space (inclusive) */
@@ -107,11 +109,13 @@ function usable(w: RoutingWorld, p: Vec3, o: SearchOptions, isStart: boolean): b
   if (belowId === "minecraft:hopper" && !o.own.has(key(below))) return false;
   if (!isStart) {
     // A foreign hopper/dropper pushing into this cell would inject items
-    for (const m of [...MOVES, "up" as const]) {
-      const n = add(p, DIR_VECTORS[m]);
-      const t = w.pushTarget(n);
-      if (t && eq(t, p) && !o.own.has(key(n)) && !o.allowedFeeds.has(key(n))) return false;
-    }
+    const pushers = w.pushersInto
+      ? w.pushersInto(p)
+      : [...MOVES, "up" as const].map((m) => add(p, DIR_VECTORS[m])).filter((n) => {
+          const t = w.pushTarget(n);
+          return t !== undefined && eq(t, p);
+        });
+    for (const n of pushers) if (!o.own.has(key(n)) && !o.allowedFeeds.has(key(n))) return false;
   }
   return true;
 }
@@ -131,12 +135,11 @@ function search(
   const h = (p: Vec3) => Math.min(...goalCells.map((g) => Math.abs(g[0] - p[0]) + Math.abs(g[2] - p[2]) + Math.max(0, p[1] - g[1])));
   // cost = hoppers * 1000 + turns (integer, so ties break deterministically)
   type Node = { p: Vec3; g: number; f: number; dir?: Exclude<Dir, "up">; parent?: Node };
-  const open: Node[] = [{ p: start, g: 1000, f: 1000 + h(start) * 1000 }];
+  const open = new Heap<Node>((a, b) => a.f - b.f);
+  open.push({ p: start, g: 1000, f: 1000 + h(start) * 1000 });
   const best = new Map<string, number>([[key(start), 1000]]);
-  while (open.length) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (open[i]!.f < open[bi]!.f) bi = i;
-    const cur = open.splice(bi, 1)[0]!;
+  while (open.size) {
+    const cur = open.pop()!;
     const ck = key(cur.p);
     if (cur.g > (best.get(ck) ?? Infinity)) continue;
     const exit = goals.get(ck);
@@ -332,4 +335,47 @@ export function poweredCells(
     }
   }
   return out;
+}
+
+/** Binary min-heap for the A* open list. */
+class Heap<T> {
+  readonly #items: T[] = [];
+  constructor(readonly less: (a: T, b: T) => number) {}
+
+  get size(): number {
+    return this.#items.length;
+  }
+
+  push(x: T): void {
+    const a = this.#items;
+    a.push(x);
+    let i = a.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.less(a[i]!, a[parent]!) >= 0) break;
+      [a[i], a[parent]] = [a[parent]!, a[i]!];
+      i = parent;
+    }
+  }
+
+  pop(): T | undefined {
+    const a = this.#items;
+    const top = a[0];
+    const last = a.pop();
+    if (a.length > 0 && last !== undefined) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1;
+        const r = l + 1;
+        let m = i;
+        if (l < a.length && this.less(a[l]!, a[m]!) < 0) m = l;
+        if (r < a.length && this.less(a[r]!, a[m]!) < 0) m = r;
+        if (m === i) break;
+        [a[i], a[m]] = [a[m]!, a[i]!];
+        i = m;
+      }
+    }
+    return top;
+  }
 }

@@ -48,8 +48,10 @@ Each phase has an exit criterion. A phase is done when it is met.
 
 ### Phase 1b – Layout solver
 The router places transport between fixed components. Choosing the positions and rotations of the components themselves – the compact, nested layouts – is a combinatorial problem for a constraint solver.
-- [ ] Constraint model: components with candidate positions/rotations, no overlap, reserved space, docking ports adjacent, objective = volume or hopper count
-- [ ] Solver behind an interface (CP-SAT / SAT via WASM, chosen under the dependency policy), with the greedy placement as the fallback
+- [x] Constraint model: free components with candidate positions/rotations, no overlap, reserved space, touching ports, routable links; objective = weighted bounding-box volume + routed hoppers
+- [x] Exact branch and bound (router in the loop) with improvement moves when the budget runs out; reports proven-optimal vs best-found
+- [ ] Rigid groups: components docked onto a free one move with it (today they are placed afterwards, unchecked by the search)
+- [ ] SAT/CP-SAT backend behind the same model for larger instances (dependency policy applies), and a proof of optimality for more than toy sizes
 - [ ] Water streams and dropper elevators as further transport types for the router
 - [ ] Optimal Steiner trees for small collectors (exact search) instead of the greedy heuristic
 
@@ -124,6 +126,6 @@ The router places transport between fixed components. Choosing the positions and
 - LP solver (phase 2b)
 
 ## Next steps
-1. Layout solver (phase 1b), starting with placing a few components compactly around a router
+1. Rigid groups in the layout search; more stdlib cores to arrange (a cactus row as a free unit)
 2. Bridge assembly → process, then the optimizer (phase 2b) – the kelp farm needs it: it only pays if kelp sells above bone meal
 3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark
