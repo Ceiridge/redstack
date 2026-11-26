@@ -32,7 +32,10 @@ export class Rcon {
   #buffer = Buffer.alloc(0);
   #nextId = 1;
   /** `single`: the reply is one packet (authentication), no sentinel */
-  #pending = new Map<number, { resolve: (s: string) => void; reject: (e: Error) => void; parts: string[]; single?: boolean }>();
+  #pending = new Map<
+    number,
+    { resolve: (s: string) => void; reject: (e: Error) => void; parts: string[]; single?: boolean; sentinel?: number }
+  >();
   /** sentinel id → command id whose reply it completes */
   #sentinels = new Map<number, number>();
   #last = "";
@@ -40,6 +43,7 @@ export class Rcon {
 
   private constructor(socket: Socket) {
     this.#socket = socket;
+    socket.setNoDelay(true);
     socket.on("data", (d) => this.#onData(d));
     socket.on("error", (e) => this.#failAll(e));
     socket.on("close", () =>
@@ -72,6 +76,11 @@ export class Rcon {
    * Runs a command (without leading slash) and returns the reply. Long
    * replies arrive in several packets of at most 4 KiB; a sentinel packet
    * after the command marks the end, so the parts can be joined.
+   *
+   * The vanilla server reads exactly one packet per socket read and drops
+   * the connection if a read holds more or less than one packet. So the
+   * sentinel goes out only once the first reply packet is back (the server
+   * has read the command by then), never in the same write as the command.
    */
   command(cmd: string): Promise<string> {
     const run = () =>
@@ -80,10 +89,9 @@ export class Rcon {
         const sentinel = this.#nextId++;
         this.#last = cmd;
         if (process.env["REDSTACK_RCON_DEBUG"]) process.stderr.write(`rcon> ${cmd}\n`);
-        this.#pending.set(id, { resolve, reject, parts: [] });
+        this.#pending.set(id, { resolve, reject, parts: [], sentinel });
         this.#sentinels.set(sentinel, id);
         this.#socket.write(encode({ id, type: TYPE_COMMAND, body: cmd }));
-        this.#socket.write(encode({ id: sentinel, type: TYPE_SENTINEL, body: "" }));
       });
     const p = this.#queue.then(run, run);
     this.#queue = p.catch(() => undefined);
@@ -121,6 +129,7 @@ export class Rcon {
         p.resolve(body);
         continue;
       }
+      if (p.parts.length === 0 && p.sentinel !== undefined) this.#socket.write(encode({ id: p.sentinel, type: TYPE_SENTINEL, body: "" }));
       p.parts.push(body);
     }
   }

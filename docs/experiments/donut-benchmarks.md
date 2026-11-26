@@ -58,5 +58,7 @@ One loader moves 9,000 items/h (one hopper into the box), so packing the whole ~
 
 ## Test-harness lessons
 
+- "RCON connection closed" right after a server start was not bad luck: the vanilla RCON server reads one packet per socket read and closes the connection if a read holds more or less than exactly one packet. The client used to send the command and its end-of-reply sentinel back to back, which a busy server can read in one go. The sentinel now goes out only after the first reply packet is back (`rcon.test.ts` checks this against an equally strict fake server); since then not one run has been dropped.
+
 - A kelp run right after the rebuilt kelp farm measured only 6,000/h (and an earlier TNT run 170,000/h, probably for the same reason): ticks still scheduled by the previous run (observers, pistons, fluids) fired on the new blocks after the area had been cleared, injecting extra clock pulses. The backend now lets 40 ticks pass on the empty area before placing anything.
 - Leftovers of a larger earlier design outside the current test area leaked items into a smaller one; every run now clears at least a fixed 80 × 72 × 80 region.
