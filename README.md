@@ -57,6 +57,8 @@ Every number comes from repeated in-game runs; the full story, including the wro
 
 redstack reads existing schematics, so proven designs can be measured instead of trusted. The *Small Fast Kelp Farm* from donut.build turned out to be a 1 : 1 bone meal → kelp converter (18,000/h) in which two of its four dispensers never fire successfully. The rebuild keeps its redstone core, drops the idle dispensers and lets the router lay the supply hoppers – **6 hoppers and 2 chests instead of 9 hoppers and 6 chests**, same measured output. Details, including a TNT-duper cobblestone farm at ≈ 208,000/h: [docs/experiments/donut-benchmarks.md](docs/experiments/donut-benchmarks.md).
 
+That TNT farm, with its storage hall replaced by shulker loaders that the layout search places and the router connects, packs 103,000 cobblestone/h into boxes with 12 loaders (model 108,000) – and shows the real limit: one loader takes 9,000/h, so the full output would need about 23.
+
 <p align="center">
   <img src="docs/images/kelp-farm-3d.png" alt="3D render of the rebuilt kelp farm: a glass water column above a note block and observers, two supply chests on either side whose hoppers lead down into the two dispensers beside the kelp." width="560">
 </p>
@@ -119,6 +121,7 @@ for (const core of [a, b]) for (const side of ["West", "East"])
 | Static checks | block states and materials against Minecraft's block table, overlaps, blocks in cells that must stay free, port alignment and kinds, possible redstone crosstalk | ms |
 | Flow model | items per hour at every port, bottlenecks, storage fill times, required inputs | ms |
 | In-game tests | placed on a Fabric + Carpet server, fast-forwarded, measured, compared to the model; lag per tick; positions of lost items | seconds–minutes |
+| Engine tests | the same scenarios in mc-tick, Nucleation's headless tick engine, for redstone and item logistics (`--backend mc-tick`) | milliseconds |
 | Viewer | textured 3D model and an isometric debug view with flows and findings | instant |
 | Export | `.litematic` / `.schem` | instant |
 | Economy | the farm as a process: in and out per hour, build cost, break-even price ratio; the most profitable plan over several farms and AFK spots (mob cap, load, accounts, market limits) | ms |
@@ -203,6 +206,11 @@ Four in-game hours take about 25 seconds. Backends implement one interface; the 
 | `KelpBonemealCore` | game-tested | 18,000 bone meal/h → ≈ 16,800 kelp/h, model matches |
 | `PlayerPickup` | game-tested | the AFK player as an item sink, counted in tests |
 | `free()` + layout search | game-tested | two kelp cores and four chests placed by the search: 34,500 kelp/h measured, model 33,500 |
+| `ShulkerLoader` | game-tested | fires only on a completely full box (subtract comparator against a reference); 3 boxes, nothing lost, 9,000 items/h |
+| `ShulkerUnloader` | game-tested | breaks the box only when it just became empty (observer + locked repeater); 8,700 items/h |
+| `ItemFilter` | game-tested | classic hopper sorter: took all coal from a mixed line, not one cobblestone |
+| `SmelterArray` | game-tested | 4 furnaces: 1,440 stone/h after the warm-up (= model) |
+| `Crafter` | game-tested | fires only on a full grid, so the recipe cannot be pre-empted: planks → 1,127 chests/h, zero buttons, plates or sticks |
 | `route` / `collect` / `distribute` | game-tested | three chests merged past a wall and a decoy chest: 9,000/h = model, nothing drained from the decoy |
 
 *game-tested* = passes on the Fabric test server with Minecraft 26.3; not yet confirmed on a production server.

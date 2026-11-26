@@ -45,6 +45,17 @@ Findings:
 - **Placing it with block updates destroys it**: the duper fires while half built and pushes its own TNT away. With strict placement it runs at once.
 - TNT duping works in vanilla and on Fabric. Paper disables it by default (`allow-piston-duplication`); the user reports it is allowed on DonutSMP.
 
+### Packed into shulker boxes
+
+`tnt-cobble-shulker-*` in `examples/src/benchmarks.ts` removes the farm's storage hall (its chests and hoppers below the item stream), puts hoppers ("taps") under some stream cells, and lets the layout search place `ShulkerLoader`s with an output chest each, connected by routed hoppers. The farm is placed strictly, our part with block updates.
+
+| Loaders | Packed | Model | Notes |
+|---|---|---|---|
+| 4 (one level) | 36,000/h | 36,000/h | 14,000 items pile up on the funnel, 2.1 ms per tick |
+| 12 (two levels, 111 routed hoppers) | 103,000/h | 108,000/h | 5,500 items pile up, 1.0 ms per tick |
+
+One loader moves 9,000 items/h (one hopper into the box), so packing the whole ~208,000/h needs ~23 loaders – or loaders with several input hoppers. Items that are not taken pile up as entities on the funnel and cost server time.
+
 ## Test-harness lessons
 
 - A kelp run right after the rebuilt kelp farm measured only 6,000/h (and an earlier TNT run 170,000/h, probably for the same reason): ticks still scheduled by the previous run (observers, pistons, fluids) fired on the new blocks after the area had been cleared, injecting extra clock pulses. The backend now lets 40 ticks pass on the empty area before placing anything.

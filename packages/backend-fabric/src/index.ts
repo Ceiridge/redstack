@@ -15,7 +15,7 @@
  * Server setup: see this package's README.
  */
 
-import { type ResolvedAssembly, type Vec3, add, bounds, formatBlock, itemsSnbt, key, sub } from "@redstack/core";
+import { type ResolvedAssembly, type Vec3, add, blockEntitySnbt, bounds, formatBlock, key, sub } from "@redstack/core";
 import { analyzeFlow } from "@redstack/flow";
 import {
   type Capability,
@@ -183,7 +183,7 @@ export class FabricCarpetBackend implements TestBackend {
     const blocks = [...a.blocks.values()].sort((x, y) => Number(strict(y.instanceId)) - Number(strict(x.instanceId)) || x.pos[1] - y.pos[1]);
     for (const b of blocks) {
       const p = w(b.pos);
-      const nbt = b.block.items?.length ? itemsSnbt(b.block.items) : "";
+      const nbt = blockEntitySnbt(b.block);
       await server.ok(`setblock ${p.join(" ")} ${formatBlock(b.block)}${nbt}${strict(b.instanceId) ? " strict" : ""}`, /Changed the block/);
     }
     // 3. Fake player on a platform, after the blocks: the design may provide its floor

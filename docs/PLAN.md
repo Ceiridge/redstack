@@ -29,7 +29,7 @@ Each phase has an exit criterion. A phase is done when it is met.
 - [x] Write `.litematic` via npm, check block states and rotations by round trip
 - [x] Independent cross-check with litemapy (older format, data version 4903): all blocks identical
 - [x] Loaded in Litematica's web preview (26.3 format) by the project owner
-- Findings on the npm build (0.12.3): block table, schematic I/O and GLB meshing work; the PNG renderer and the simulations (MCHPRS, mc-tick) are not included. The Python wheel has them, but rendering needs a GPU and reading container contents after an mc-tick run did not work in a first attempt.
+- Findings on the npm build (0.12.3): block table, schematic I/O and GLB meshing work; the PNG renderer and the simulations (MCHPRS, mc-tick) are not included. mc-tick is now used directly from the submodule's Rust crates (see phase 3).
 
 ### Phase 1 – Core ✅ (API v2)
 - [x] Geometry with relative directions and rotation
@@ -79,7 +79,7 @@ The router places transport between fixed components. Choosing the positions and
 - [x] First components game-tested: HopperLine, Chest, SupplyChest, CactusCell, CactusRow
 - [x] Server time per tick (lag) per run; positions of lost items
 - [x] Backends declare which environments they cannot reproduce
-- [ ] mc-tick (Nucleation) as a fast backend for redstone and item logistics – needs container read-out
+- [x] mc-tick (Nucleation) as a fast backend for redstone and item logistics: native tool in `packages/backend-mctick` (engine from the submodule), `redstack test --backend mc-tick`; refuses unmodelled blocks (cactus), cannot do players, crafting or smelting; shulker boxes stack wrongly there, so loaders are verified on Fabric
 - [ ] Use the vanilla GameTest framework for component tests
 - [ ] Several server processes in parallel; container without network for the server
 - [ ] Chunk reload and server restart as test actions
@@ -99,7 +99,10 @@ The router places transport between fixed components. Choosing the positions and
 **Exit reached:** on a deliberately broken farm (`examples/src/debugger-demo.ts`) every fault is visible immediately.
 
 ### Phase 5 – Standard library and AI loop
-- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs
+- [ ] 10–20 proven components (rebuilt from proven designs, respecting licences and credits), each with a test and docs. Game-tested so far: HopperLine, Chest, DoubleChest, SupplyChest, CactusRow, KelpBonemealCore, PlayerPickup, ShulkerLoader, ShulkerUnloader, ItemFilter, SmelterArray, Crafter (single-ingredient and shapeless recipes)
+  - [ ] Crafter for shaped recipes with several ingredients (needs ordered input)
+  - [ ] Faster shulker loading (several hoppers per box) – a TNT cobblestone farm makes ~208,000/h, one loader takes 9,000/h
+  - [ ] Water-based collection; a TNT-duper module of our own
   - donut.build: its terms forbid scraping and its download endpoint blocks bots, so schematics are downloaded by hand and analysed with `redstack inspect` / `schematicComponent`; originals are not committed
 - [ ] Component docs written for AIs too: ports, rates, limits, known traps
 - [ ] Loop: write → stage 0 → stage 1 → test → repair
@@ -127,6 +130,6 @@ The router places transport between fixed components. Choosing the positions and
 
 ## Next steps
 1. Real prices: the donutflipper price history converter (phase 2b) – the kelp farm only pays if kelp sells for ≥ 1.075 × bone meal, and the optimizer is only as good as its prices
-2. Mirrored variants as options in the layout search (`free({ mirror: true })`)
-3. More proven components (phase 5): water-based collection, a TNT-duper module from the benchmark
-3. More components with tests (phase 5): water-based collection, a TNT-duper module based on the benchmark
+2. Faster shulker loader and a crafter for multi-ingredient shaped recipes
+3. Mirrored variants as options in the layout search (`free({ mirror: true })`)
+4. Water-based collection, our own TNT-duper module

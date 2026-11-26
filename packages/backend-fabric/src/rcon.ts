@@ -35,13 +35,16 @@ export class Rcon {
   #pending = new Map<number, { resolve: (s: string) => void; reject: (e: Error) => void; parts: string[]; single?: boolean }>();
   /** sentinel id → command id whose reply it completes */
   #sentinels = new Map<number, number>();
+  #last = "";
   #queue: Promise<unknown> = Promise.resolve();
 
   private constructor(socket: Socket) {
     this.#socket = socket;
     socket.on("data", (d) => this.#onData(d));
     socket.on("error", (e) => this.#failAll(e));
-    socket.on("close", () => this.#failAll(new Error("RCON connection closed.")));
+    socket.on("close", () =>
+      this.#failAll(new Error(`RCON connection closed${this.#last ? ` (last command: ${this.#last.slice(0, 200)}${this.#last.length > 200 ? "…" : ""}, ${this.#last.length} bytes)` : ""}.`)),
+    );
   }
 
   static async connect(host: string, port: number, password: string, timeoutMs = 10_000): Promise<Rcon> {
@@ -75,6 +78,8 @@ export class Rcon {
       new Promise<string>((resolve, reject) => {
         const id = this.#nextId++;
         const sentinel = this.#nextId++;
+        this.#last = cmd;
+        if (process.env["REDSTACK_RCON_DEBUG"]) process.stderr.write(`rcon> ${cmd}\n`);
         this.#pending.set(id, { resolve, reject, parts: [] });
         this.#sentinels.set(sentinel, id);
         this.#socket.write(encode({ id, type: TYPE_COMMAND, body: cmd }));

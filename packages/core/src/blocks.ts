@@ -36,6 +36,8 @@ export interface BlockSpec {
   readonly props: Readonly<Record<string, PropValue>>;
   /** Contents of a container block as built (filter items of a sorter, a reference dropper) */
   readonly items?: readonly ItemSlot[];
+  /** Further block-entity fields as SNBT values, e.g. a crafter's `disabled_slots: "[I;4]"` */
+  readonly data?: Readonly<Record<string, string>>;
 }
 
 /** Items packed into slots of `stackSize` (default 64), from slot 0 on. */
@@ -59,15 +61,22 @@ export class Block implements BlockSpec {
   readonly id: string;
   readonly props: Readonly<Record<string, PropValue>>;
   readonly items?: readonly ItemSlot[];
+  readonly data?: Readonly<Record<string, string>>;
 
-  constructor(id: string, props: Record<string, PropValue> = {}, items?: readonly ItemSlot[]) {
+  constructor(id: string, props: Record<string, PropValue> = {}, items?: readonly ItemSlot[], data?: Readonly<Record<string, string>>) {
     this.id = namespaced(id);
     this.props = props;
     if (items) this.items = items;
+    if (data) this.data = data;
   }
 
   with(props: Record<string, PropValue>): Block {
-    return new Block(this.id, { ...this.props, ...props }, this.items);
+    return new Block(this.id, { ...this.props, ...props }, this.items, this.data);
+  }
+
+  /** Block-entity fields as SNBT values: `B.of("crafter").withData({ disabled_slots: "[I;4]" })` */
+  withData(data: Readonly<Record<string, string>>): Block {
+    return new Block(this.id, { ...this.props }, this.items, { ...this.data, ...data });
   }
 
   /**
@@ -75,12 +84,12 @@ export class Block implements BlockSpec {
    * (slots in order, 64 per stack) or explicit slots.
    */
   containing(...entries: ReadonlyArray<readonly [string, number]>): Block {
-    return new Block(this.id, { ...this.props }, fillSlots(entries));
+    return new Block(this.id, { ...this.props }, fillSlots(entries), this.data);
   }
 
   /** Built with exactly these slots */
   withSlots(slots: readonly ItemSlot[]): Block {
-    return new Block(this.id, { ...this.props }, slots.map((x) => ({ ...x, id: namespaced(x.id) })));
+    return new Block(this.id, { ...this.props }, slots.map((x) => ({ ...x, id: namespaced(x.id) })), this.data);
   }
 
   /** Sets "facing" directly (local direction). For blocks without special semantics. */
@@ -166,6 +175,11 @@ export function rotateBlock(spec: BlockSpec, rot: Rotation): BlockSpec {
       conn[rotateDir(k as Dir, rot)] = v;
     } else if (DIRECTIONAL_VALUE_PROPS.has(k) && typeof v === "string" && isDir(v)) {
       out[k] = rotateDir(v, rot);
+    } else if (k === "orientation" && typeof v === "string") {
+      out[k] = v
+        .split("_")
+        .map((d) => (isDir(d) ? rotateDir(d, rot) : d))
+        .join("_");
     } else if (k === "axis" && (v === "x" || v === "z") && rot % 2 === 1) {
       out[k] = v === "x" ? "z" : "x";
     } else if (k === "rotation" && typeof v === "number") {
@@ -175,7 +189,7 @@ export function rotateBlock(spec: BlockSpec, rot: Rotation): BlockSpec {
     }
   }
   for (const [k, v] of Object.entries(conn)) out[k] = v;
-  return { id: spec.id, props: out, ...(spec.items ? { items: spec.items } : {}) };
+  return { id: spec.id, props: out, ...(spec.items ? { items: spec.items } : {}), ...(spec.data ? { data: spec.data } : {}) };
 }
 
 const MIRROR_X: Readonly<Record<string, string>> = { east: "west", west: "east" };
@@ -211,15 +225,24 @@ export function mirrorBlock(spec: BlockSpec): BlockSpec {
     else if ((k === "shape" || k === "hinge" || k === "type") && typeof v === "string" && HANDED[v]) out[k] = HANDED[v]!;
     else if (k === "shape" && typeof v === "string" && RAIL_MIRROR[v]) out[k] = RAIL_MIRROR[v]!;
     else if (k === "rotation" && typeof v === "number") out[k] = (16 - v) % 16;
+    else if (k === "orientation" && typeof v === "string") out[k] = v.split("_").map((d) => MIRROR_X[d] ?? d).join("_");
     else out[k] = v;
   }
   for (const [k, v] of Object.entries(conn)) out[k] = v;
-  return { id: spec.id, props: out, ...(spec.items ? { items: spec.items } : {}) };
+  return { id: spec.id, props: out, ...(spec.items ? { items: spec.items } : {}), ...(spec.data ? { data: spec.data } : {}) };
 }
 
 /** Container contents as SNBT, e.g. for /setblock: {Items:[{Slot:0b,id:"minecraft:stone",count:64}]} */
 export function itemsSnbt(items: readonly ItemSlot[]): string {
   return `{Items:[${items.map((i) => `{Slot:${i.slot}b,id:"${i.id}",count:${i.count}}`).join(",")}]}`;
+}
+
+/** All block-entity data of a block as SNBT (contents and further fields), or "" if it has none. */
+export function blockEntitySnbt(spec: BlockSpec): string {
+  const fields: string[] = [];
+  if (spec.items?.length) fields.push(`Items:[${spec.items.map((i) => `{Slot:${i.slot}b,id:"${i.id}",count:${i.count}}`).join(",")}]`);
+  for (const [k, v] of Object.entries(spec.data ?? {})) fields.push(`${k}:${v}`);
+  return fields.length ? `{${fields.join(",")}}` : "";
 }
 
 /** Canonical block string: minecraft:hopper[enabled=true,facing=down] (properties sorted). */

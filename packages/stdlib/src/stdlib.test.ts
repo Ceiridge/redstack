@@ -8,11 +8,15 @@ import {
   CactusCell,
   CactusRow,
   Chest,
+  Crafter,
   HopperLine,
   KelpBonemealCore,
   PlayerPickup,
   SupplyChest,
   cactusGrowthPerHour,
+  containerSignal,
+  disabledSlots,
+  itemsForSignal,
   withSettings,
 } from "./index.js";
 
@@ -153,3 +157,39 @@ function reachesTarget(r: ResolvedAssembly, pos: readonly [number, number, numbe
   }
   return false;
 }
+
+describe("processing", () => {
+  it("computes comparator signals like the game", () => {
+    assert.equal(containerSignal([[22, 64]], 5), 1, "filter hopper: 18 + 4 junk");
+    assert.equal(containerSignal([[23, 64]], 5), 2, "one extra item");
+    assert.equal(containerSignal([[27 * 64, 64]], 27), 15, "full shulker box");
+    assert.equal(containerSignal([[27 * 64 - 1, 64]], 27), 14, "one item short");
+    assert.equal(containerSignal([[itemsForSignal(14, 9), 64]], 9), 14);
+    assert.equal(containerSignal([[itemsForSignal(8, 9), 64]], 9), 8);
+  });
+
+  it("disables the crafter slots the pattern leaves empty", () => {
+    assert.deepEqual(disabledSlots({ pattern: ["PPP", "P.P", "PPP"], key: { P: "minecraft:oak_planks" }, result: "minecraft:chest" }), [4]);
+    assert.deepEqual(disabledSlots({ pattern: ["S..", "S..", "..."], key: { S: "minecraft:oak_planks" }, result: "minecraft:stick" }), [1, 2, 4, 5, 6, 7, 8]);
+  });
+
+  it("refuses shaped recipes with several ingredients, allows shapeless ones", () => {
+    const piston = { pattern: ["PPP", "CIC", "CRC"], key: { P: "minecraft:oak_planks", C: "minecraft:cobblestone", I: "minecraft:iron_ingot", R: "minecraft:redstone" }, result: "minecraft:piston" } as const;
+    assert.throws(() => Crafter.instantiate({ recipe: { ...piston, pattern: [...piston.pattern] as [string, string, string] } }), /ordered input/);
+    const charge = { pattern: ["GBC", "...", "..."] as [string, string, string], key: { G: "minecraft:gunpowder", B: "minecraft:blaze_powder", C: "minecraft:coal" }, result: "minecraft:fire_charge", count: 3 };
+    assert.doesNotThrow(() => Crafter.instantiate({ recipe: charge, shapeless: true }));
+  });
+
+  it("models a crafter as ingredients → products, limited by its hopper", () => {
+    const r = assembly("craft", (f) => {
+      const c = f.add(Crafter).at([0, 0, 0]);
+      f.connect(f.add(SupplyChest({ item: "minecraft:oak_planks" })).at([0, 2, 0]).port("out"), c.port("in"));
+      c.to(Chest);
+    }).resolve();
+    assert.equal(analyzeFlow(r).storedPerHour["minecraft:chest"], 9_000 / 8);
+    assert.deepEqual(
+      runChecks(r, { registry }).filter((d) => d.severity === "error"),
+      [],
+    );
+  });
+});

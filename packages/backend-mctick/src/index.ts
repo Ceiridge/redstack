@@ -109,7 +109,8 @@ export function toStructureSnbt(
         const comp = m ? `, components: {"minecraft:container": ${m[2]}}` : "";
         for (let left = x.count; left > 0; left -= per) stacks.push(`{Slot: ${slot++}b, id: ${snbtString(id)}, count: ${Math.min(per, left)}${comp}}`);
       }
-      nbt = `, nbt: {id: ${snbtString(b.block.id)}, Items: [${stacks.join(", ")}]}`;
+      const data = Object.entries(b.block.data ?? {}).map(([k, v]) => `, ${k}: ${v}`).join("");
+      nbt = `, nbt: {id: ${snbtString(b.block.id)}, Items: [${stacks.join(", ")}]${data}}`;
     }
     lines.push(`{pos: [${r.join(", ")}], state: ${st}${nbt}}`);
   }

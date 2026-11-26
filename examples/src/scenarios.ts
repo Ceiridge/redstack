@@ -4,7 +4,18 @@
  */
 
 import { B, assembly } from "@redstack/core";
-import { Chest, DoubleChest, HopperLine, ShulkerLoader, ShulkerUnloader, SupplyChest, filledShulker } from "@redstack/stdlib";
+import {
+  Chest,
+  Crafter,
+  DoubleChest,
+  HopperLine,
+  ItemFilter,
+  ShulkerLoader,
+  ShulkerUnloader,
+  SmelterArray,
+  SupplyChest,
+  filledShulker,
+} from "@redstack/stdlib";
 import { type Scenario, scenario } from "@redstack/testing";
 import { cactusFarm, cactusRingFarm } from "./cactus-farm.js";
 import { kelpFarm } from "./kelp-farm.js";
@@ -166,6 +177,91 @@ export function shulkerUnloaderScenario(): Scenario {
   });
 }
 
+/**
+ * Item filter: a chest of cobblestone then coal runs along a hopper line;
+ * the filter under the line's second hopper must take all coal and nothing else.
+ */
+export function itemFilterScenario(): Scenario {
+  const r = assembly("item-filter", (f) => {
+    const supply = f.add(SupplyChest).at([0, 2, 0]);
+    const line = f.add(HopperLine({ length: 4 })).rotated(1).at([0, 1, 0]);
+    f.connect(supply.port("out"), line.port("in"));
+    line.to(Chest);
+    // The filter pulls from the line hopper above it (no port connection: it is a branch of the line)
+    const filter = f.add(ItemFilter({ item: "minecraft:coal" })).at([1, 0, 0]);
+    filter.to(Chest);
+  }).resolve();
+  const target = r.instances.get("Chest#2")!.origin;
+  return scenario(r, {
+    durationTicks: 6_000,
+    sampleEveryTicks: 1_000,
+    actions: [
+      {
+        type: "insert",
+        at: [0, 2, 0],
+        item: "minecraft:cobblestone",
+        count: 6 * 64,
+      },
+      { type: "insert", at: [0, 2, 0], item: "minecraft:coal", count: 3 * 64 },
+    ],
+    measure: { containers: [target], items: ["minecraft:coal", "minecraft:cobblestone"] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:coal", perHour: 1 },
+      { type: "rate-at-most", item: "minecraft:cobblestone", perHour: 0 },
+      { type: "no-ground-items" },
+    ],
+  });
+}
+
+/**
+ * Four furnaces smelting cobblestone with coal: 4 × 360 stone/h. The lines
+ * hand items down with priority to the first furnaces (a lower hopper pulls
+ * whatever its upper one gets), so a furnace only gets input once the
+ * buffers before it are full (~384 items each): long warm-up.
+ */
+export function smelterScenario(): Scenario {
+  const r = assembly("smelter", (f) => {
+    const s = f.add(SmelterArray({ count: 4 })).at([0, 0, 0]);
+    for (const x of [0, 2]) f.connect(f.add(SupplyChest).at([x, 3, 0]).port("out"), s.port("in"));
+    f.connect(f.add(SupplyChest({ item: "minecraft:coal" })).at([0, 2, 1]).port("out"), s.port("fuel"));
+    s.to(Chest);
+  }).resolve();
+  return scenario(r, {
+    durationTicks: 40_000,
+    warmupTicks: 16_000,
+    sampleEveryTicks: 4_000,
+    actions: [
+      { type: "insert", at: [0, 3, 0], item: "minecraft:cobblestone", count: 27 * 64 },
+      { type: "insert", at: [2, 3, 0], item: "minecraft:cobblestone", count: 27 * 64 },
+      { type: "insert", at: [0, 2, 1], item: "minecraft:coal", count: 27 * 64 },
+    ],
+    measure: { items: ["minecraft:stone"] },
+    expectations: [{ type: "matches-flow-model", tolerance: 0.05 }, { type: "no-ground-items" }],
+  });
+}
+
+/** Crafter: planks into chests – and never buttons, plates, sticks or crafting tables. */
+export function crafterScenario(): Scenario {
+  const r = assembly("crafter-chest", (f) => {
+    const crafter = f.add(Crafter).at([0, 0, 0]);
+    f.connect(f.add(SupplyChest({ item: "minecraft:oak_planks" })).at([0, 2, 0]).port("out"), crafter.port("in"));
+    crafter.to(Chest);
+  }).resolve();
+  const wrong = ["minecraft:oak_button", "minecraft:oak_pressure_plate", "minecraft:stick", "minecraft:crafting_table", "minecraft:oak_slab"];
+  return scenario(r, {
+    durationTicks: 12_000,
+    warmupTicks: 400,
+    sampleEveryTicks: 1_200,
+    actions: [{ type: "insert", at: [0, 2, 0], item: "minecraft:oak_planks", count: 27 * 64 }],
+    measure: { items: ["minecraft:chest", ...wrong] },
+    expectations: [
+      { type: "rate-at-least", item: "minecraft:chest", perHour: 900 },
+      ...wrong.map((item) => ({ type: "rate-at-most" as const, item, perHour: 0 })),
+      { type: "no-ground-items" },
+    ],
+  });
+}
+
 /** Survival measurement: 24 cactus columns, 4 in-game hours, 3 runs. */
 function cactusSurvival(design: "row" | "ring", breaker: "fence" | "glass"): Scenario {
   const farm = design === "row" ? cactusFarm(24, breaker) : cactusRingFarm(24, breaker);
@@ -194,6 +290,9 @@ export const scenarios: Record<string, () => Scenario> = {
   "hopper-collector": hopperCollector,
   "shulker-loader": shulkerLoaderScenario,
   "shulker-unloader": shulkerUnloaderScenario,
+  "item-filter": itemFilterScenario,
+  smelter: smelterScenario,
+  "crafter-chest": crafterScenario,
   "kelp-farm": () => kelpFarmScenario(),
   "kelp-farm-mirrored": () => kelpFarmScenario(true),
   "kelp-twin": kelpTwinScenario,
